@@ -21,7 +21,6 @@ import { MeterModule } from 'src/modules/meter/meter.module';
 import { BillingModule } from 'src/modules/billing/billing.module';
 import { PaymentModule } from 'src/modules/payment/payment.module';
 import { DocumentModule } from 'src/modules/document/document.module';
-import { TicketModule } from 'src/modules/ticket/ticket.module';
 import { CommunicationModule } from 'src/modules/communication/communication.module';
 import { SessionModule } from 'src/modules/session/session.module';
 import { SegmentationModule } from 'src/modules/segmentation/segmentation.module';
@@ -39,6 +38,7 @@ import { MeterAnomalyModule } from 'src/modules/meter-anomaly/meter-anomaly.modu
 import { CampaignModule } from 'src/modules/campaign/campaign.module';
 import { LeakageAlertModule } from 'src/modules/leakage-alert/leakage-alert.module';
 import { WaterQualityModule } from 'src/modules/water-quality/water-quality.module';
+import { IncidentModule } from 'src/modules/incident/incident.module';
 
 @Global()
 @Module({
@@ -77,8 +77,6 @@ import { WaterQualityModule } from 'src/modules/water-quality/water-quality.modu
     PaymentModule,
     // Document Module — upload/download/list (owns the 'document' port; AC: Epic 5)
     DocumentModule,
-    // Ticket Module — incident report submission, photo upload (AC: Epic 5)
-    TicketModule,
     // Communication Module — proactive area alerts, notification dispatch (AC: Epic 6)
     CommunicationModule,
     // Session Module — atomic Redis session store & event recording (AC: Epic 7)
@@ -113,6 +111,8 @@ import { WaterQualityModule } from 'src/modules/water-quality/water-quality.modu
     LeakageAlertModule,
     // Water Quality Module — quality at location + alerts (Phase 3, S35)
     WaterQualityModule,
+    // Incident Module — operational incidents + GIS Triage (Ticket ≠ Incident)
+    IncidentModule,
     // Auth Propagation — JWT signing for BFF→downstream identity propagation
     AuthPropagationModule,
     // Hexagonal Port Registry — centralized downstream service interface (needs AuthPropagationModule)

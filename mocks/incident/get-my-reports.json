@@ -1,0 +1,29 @@
+{
+  "reports": [
+    {
+      "reportId": "SC-2026-00042",
+      "customerId": "USR-12345",
+      "type": "water_outage",
+      "description": "Mất nước từ sáng nay, khu vực ngõ 5 Trần Phú",
+      "photoUrls": [],
+      "location": { "lat": 20.9667, "lng": 107.3167, "address": "Ngõ 5 Trần Phú, Cẩm Phả", "area": "CP-DMA-1" },
+      "status": "in_progress",
+      "incidentId": "INC-2026-0042",
+      "createdAt": "2026-07-08T08:12:00Z",
+      "updatedAt": "2026-07-08T09:30:00Z"
+    },
+    {
+      "reportId": "SC-2026-00038",
+      "customerId": "USR-12345",
+      "type": "water_quality",
+      "description": "Nước có màu vàng đục",
+      "photoUrls": [],
+      "location": { "lat": 20.9667, "lng": 107.3167, "address": "Ngõ 5 Trần Phú, Cẩm Phả", "area": "CP-DMA-1" },
+      "status": "resolved",
+      "incidentId": "INC-2026-0039",
+      "createdAt": "2026-07-05T07:00:00Z",
+      "updatedAt": "2026-07-05T15:00:00Z"
+    }
+  ],
+  "totalCount": 2
+}

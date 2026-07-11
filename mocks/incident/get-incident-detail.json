@@ -1,0 +1,21 @@
+{
+  "incidentId": "INC-2026-0042",
+  "type": "pipe_burst",
+  "status": "in_progress",
+  "severity": "high",
+  "location": { "lat": 20.9667, "lng": 107.3167, "address": "Ngõ 5 Trần Phú, Cẩm Phả", "area": "CP-DMA-1" },
+  "description": "Ống nước Ø110 vỡ tại ngõ 5 Trần Phú. Đội KT đang đào đất + thay ống. Dự kiến hoàn thành 16:00.",
+  "affectedCustomers": 42,
+  "linkedTicketIds": ["TK-2026-002", "TK-2026-003", "TK-2026-004"],
+  "assignedTeam": "TEAM-CP-03",
+  "source": "gis_triage",
+  "createdAt": "2026-07-08T08:15:00Z",
+  "updatedAt": "2026-07-08T09:30:00Z",
+  "resolvedAt": null,
+  "timeline": [
+    { "status": "reported", "timestamp": "2026-07-08T08:12:00Z", "actor": "GIS Triage", "description": "3 ticket KH báo mất nước khu vực ngõ 5 Trần Phú → gộp thành 1 sự cố" },
+    { "status": "triaged", "timestamp": "2026-07-08T08:15:00Z", "actor": "GIS Triage", "description": "Xác định loại: vỡ ống · Mức: high · ước tính 42 KH ảnh hưởng" },
+    { "status": "assigned", "timestamp": "2026-07-08T08:20:00Z", "actor": "Điều độ", "description": "Phân công Đội KT khu vực Hạ Long 2 (TEAM-CP-03)" },
+    { "status": "in_progress", "timestamp": "2026-07-08T09:30:00Z", "actor": "TEAM-CP-03", "description": "Đội có mặt · đang đào đất + thay ống Ø110" }
+  ]
+}

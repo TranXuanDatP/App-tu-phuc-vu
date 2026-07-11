@@ -1,0 +1,50 @@
+{
+  "incidents": [
+    {
+      "incidentId": "INC-2026-0042",
+      "type": "pipe_burst",
+      "status": "in_progress",
+      "severity": "high",
+      "location": { "lat": 20.9667, "lng": 107.3167, "address": "Ngõ 5 Trần Phú, Cẩm Phả", "area": "CP-DMA-1" },
+      "description": "Ống nước vỡ tại ngõ 5, đang sửa chữa",
+      "affectedCustomers": 42,
+      "linkedTicketIds": ["TK-2026-002", "TK-2026-003", "TK-2026-004"],
+      "assignedTeam": "TEAM-CP-03",
+      "source": "gis_triage",
+      "createdAt": "2026-07-08T08:15:00Z",
+      "updatedAt": "2026-07-08T09:30:00Z",
+      "resolvedAt": null
+    },
+    {
+      "incidentId": "INC-2026-0041",
+      "type": "water_outage",
+      "status": "resolved",
+      "severity": "medium",
+      "location": { "lat": 20.9550, "lng": 107.3100, "address": "Tổ 9 Cẩm Đông", "area": "CP-DMA-2" },
+      "description": "Bảo trì định kỳ khu vực Cẩm Đông",
+      "affectedCustomers": 18,
+      "linkedTicketIds": [],
+      "assignedTeam": "TEAM-CP-01",
+      "source": "staff_report",
+      "createdAt": "2026-07-07T06:00:00Z",
+      "updatedAt": "2026-07-07T11:00:00Z",
+      "resolvedAt": "2026-07-07T11:00:00Z"
+    },
+    {
+      "incidentId": "INC-2026-0040",
+      "type": "leak",
+      "status": "triaged",
+      "severity": "critical",
+      "location": { "lat": 20.9700, "lng": 107.3200, "address": "Khu công nghiệp Cẩm Phả", "area": "KCN-CP" },
+      "description": "Rò rỉ lớn phát hiện từ cảm biến áp lực",
+      "affectedCustomers": 5,
+      "linkedTicketIds": [],
+      "assignedTeam": null,
+      "source": "sensor",
+      "createdAt": "2026-07-08T07:45:00Z",
+      "updatedAt": "2026-07-08T08:00:00Z",
+      "resolvedAt": null
+    }
+  ],
+  "totalCount": 3
+}

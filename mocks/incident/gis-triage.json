@@ -1,0 +1,8 @@
+{
+  "incidentId": "INC-2026-0042",
+  "incidentType": "pipe_burst",
+  "severity": "high",
+  "groupedTicketIds": ["TK-2026-002", "TK-2026-003", "TK-2026-004"],
+  "location": { "lat": 20.9667, "lng": 107.3167, "address": "Ngõ 5 Trần Phú, Cẩm Phả", "area": "CP-DMA-1" },
+  "message": "GIS Triage: gộp 3 ticket (mất nước + nước đục + nước yếu) cùng khu vực ngõ 5 Trần Phú → 1 sự cố vỡ ống. 42 KH ảnh hưởng."
+}

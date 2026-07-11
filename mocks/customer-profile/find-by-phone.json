@@ -1,0 +1,18 @@
+{
+  "customerId": "QN-0912345",
+  "fullName": "Nguyễn Anh Tuấn",
+  "classification": "sinh_hoat",
+  "address": {
+    "street": "Số 12 Trần Phú",
+    "ward": "P. Bạch Đằng",
+    "district": "TP Hạ Long",
+    "city": "Quảng Ninh",
+    "fullAddress": "Số 12 Trần Phú, P. Bạch Đằng, TP Hạ Long, Quảng Ninh"
+  },
+  "contactInfo": {
+    "phone": "0987654321",
+    "email": "anh.tuan.nguyen@email.com",
+    "contactAddress": "Số 12 Trần Phú, P. Bạch Đằng, TP Hạ Long"
+  },
+  "status": "active"
+}

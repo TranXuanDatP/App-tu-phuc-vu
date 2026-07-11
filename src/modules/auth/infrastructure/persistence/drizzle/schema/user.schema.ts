@@ -56,6 +56,8 @@ export const usersTable = pgTable(
     image: varchar('image', { length: 1024 }),
     role: userRoleEnum('role').default('customer'),
     status: userStatusEnum('status').default('active'),
+    // Customer 360 link — set when the user is matched to a customer record
+    customerId: varchar('customer_id', { length: 128 }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
   },

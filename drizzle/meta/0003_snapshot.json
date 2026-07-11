@@ -1,6 +1,6 @@
 {
-  "id": "721383a2-e32f-46be-8c69-5789e003ad53",
-  "prevId": "bebfb768-f44e-460b-bf69-76cbbd4430c7",
+  "id": "8bfead99-24e0-42ea-8d1d-0ffc55d6a069",
+  "prevId": "721383a2-e32f-46be-8c69-5789e003ad53",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -263,6 +263,12 @@
           "primaryKey": false,
           "notNull": false,
           "default": "'active'"
+        },
+        "customer_id": {
+          "name": "customer_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",

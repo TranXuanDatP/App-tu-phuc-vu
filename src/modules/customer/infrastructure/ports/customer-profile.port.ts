@@ -43,6 +43,7 @@ export class MockCustomerProfileAdapter extends MockAdapterBase implements ICust
         'get-timeline': TimelineResponseSchema,
         'get-related-accounts': RelatedAccountsResponseSchema,
         'update-profile': UpdateProfileResponseSchema,
+        'find-by-phone': CustomerProfileSchema,
       },
       new Logger('customer-profile-mock-adapter'),
     );
