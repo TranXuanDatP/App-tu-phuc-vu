@@ -15,7 +15,7 @@ describe('DispatchNotificationHandler', () => {
 
   const mockDispatchResult = {
     dispatched: true,
-    channel: 'zns' as const,
+    channel: 'push' as const,
     rateLimited: false,
   };
 
@@ -23,7 +23,7 @@ describe('DispatchNotificationHandler', () => {
     portRegistry = { execute: jest.fn() };
     rateLimiterService = {
       check: jest.fn(),
-      getFallbackChain: jest.fn().mockReturnValue(['zns', 'push', 'in_app']),
+      getFallbackChain: jest.fn().mockReturnValue(['push', 'in_app']),
     };
     commandBus = { execute: jest.fn().mockResolvedValue(undefined) };
     handler = new DispatchNotificationHandler(portRegistry as any, rateLimiterService as any, commandBus as any);
@@ -31,11 +31,11 @@ describe('DispatchNotificationHandler', () => {
 
   const TEST_CUSTOMER_ID = 'USR-001';
 
-  // ── Success dispatch (AC#2) ──────────────────────────────────────────────
+  // ── Success dispatch (AC#2) — App-only: push ────────────────────────────
 
   describe('execute — success dispatch', () => {
-    it('should dispatch via ZNS when rate limit allows', async () => {
-      (rateLimiterService.check).mockResolvedValue({ allowed: true, currentCount: 1, limit: 2 });
+    it('should dispatch via push when rate limit allows', async () => {
+      (rateLimiterService.check).mockResolvedValue({ allowed: true, currentCount: 1, limit: 50 });
       portRegistry.execute.mockResolvedValue({ data: mockDispatchResult });
 
       const result = await handler.execute(
@@ -47,21 +47,21 @@ describe('DispatchNotificationHandler', () => {
       );
 
       expect(result.dispatched).toBe(true);
-      expect(result.channel).toBe('zns');
+      expect(result.channel).toBe('push');
       expect(result.rateLimited).toBe(false);
       expect(portRegistry.execute).toHaveBeenCalledWith(
         'notification', 'dispatch-notification',
         expect.objectContaining({
           customerId: TEST_CUSTOMER_ID,
           type: 'payment_completed',
-          channel: 'zns',
+          channel: 'push',
           useCache: false,
         }),
       );
     });
 
     it('should dispatch RecordSessionEventCommand on successful dispatch', async () => {
-      (rateLimiterService.check).mockResolvedValue({ allowed: true, currentCount: 1, limit: 2 });
+      (rateLimiterService.check).mockResolvedValue({ allowed: true, currentCount: 1, limit: 50 });
       portRegistry.execute.mockResolvedValue({ data: mockDispatchResult });
 
       await handler.execute(
@@ -77,19 +77,19 @@ describe('DispatchNotificationHandler', () => {
       expect(callArg).toBeInstanceOf(RecordSessionEventCommand);
       expect(callArg.payload.userId).toBe(TEST_CUSTOMER_ID);
       expect(callArg.payload.eventType).toBe('notification_sent');
-      expect(callArg.payload.channel).toBe('app'); // App-only — session touchpoint is always 'app'
+      expect(callArg.payload.channel).toBe('app');
     });
   });
 
-  // ── Critical + ZNS rate limited → fallback to push (AC#1) ────────────────
+  // ── Critical + push rate limited → fallback to in_app ────────────────────
 
   describe('execute — critical + fallback', () => {
-    it('should fallback from ZNS to push when ZNS rate limited', async () => {
+    it('should fallback from push to in_app when push rate limited', async () => {
       (rateLimiterService.check as jest.Mock)
-        .mockResolvedValueOnce({ allowed: false, currentCount: 3, limit: 2 }) // ZNS blocked
-        .mockResolvedValueOnce({ allowed: true, currentCount: 1, limit: 50 }); // Push allowed
+        .mockResolvedValueOnce({ allowed: false, currentCount: 51, limit: 50 }) // Push blocked
+        .mockResolvedValueOnce({ allowed: true, currentCount: 0, limit: Infinity }); // In-App always allowed
       portRegistry.execute.mockResolvedValue({
-        data: { dispatched: true, channel: 'push', rateLimited: false },
+        data: { dispatched: true, channel: 'in_app', rateLimited: false },
       });
 
       const result = await handler.execute(
@@ -101,41 +101,18 @@ describe('DispatchNotificationHandler', () => {
       );
 
       expect(result.dispatched).toBe(true);
-      expect(result.channel).toBe('push');
-      expect(result.rateLimited).toBe(false);
-      expect(result.fallbackChain).toEqual(['zns']);
-    });
-
-    it('should fallback through entire chain if needed', async () => {
-      (rateLimiterService.check as jest.Mock)
-        .mockResolvedValueOnce({ allowed: false, currentCount: 3, limit: 2 }) // ZNS blocked
-        .mockResolvedValueOnce({ allowed: false, currentCount: 51, limit: 50 }) // Push blocked
-        .mockResolvedValueOnce({ allowed: true, currentCount: 0, limit: Infinity }); // In-App always allowed
-      portRegistry.execute.mockResolvedValue({
-        data: { dispatched: true, channel: 'in_app', rateLimited: false },
-      });
-
-      const result = await handler.execute(
-        new DispatchNotificationCommand({
-          customerId: TEST_CUSTOMER_ID,
-          type: 'payment_failed',
-          isCritical: true,
-        }),
-      );
-
-      expect(result.dispatched).toBe(true);
       expect(result.channel).toBe('in_app');
-      expect(result.fallbackChain).toEqual(['zns', 'push']);
+      expect(result.rateLimited).toBe(false);
+      expect(result.fallbackChain).toEqual(['push']);
     });
   });
 
-  // ── Critical + all channels exhausted (should not happen) ────────────────
+  // ── Critical + all channels exhausted (should not happen — in_app = ∞) ────
 
   describe('execute — critical all exhausted', () => {
     it('should return dispatched false when all channels fail', async () => {
       (rateLimiterService.check as jest.Mock)
         .mockResolvedValue({ allowed: false, currentCount: 999, limit: 0 });
-      // Even in_app returns false (shouldn't happen but defensive)
 
       const result = await handler.execute(
         new DispatchNotificationCommand({
@@ -155,7 +132,7 @@ describe('DispatchNotificationHandler', () => {
   describe('execute — non-critical drop', () => {
     it('should drop non-critical notification when rate limited', async () => {
       (rateLimiterService.check).mockResolvedValue({
-        allowed: false, currentCount: 3, limit: 2,
+        allowed: false, currentCount: 51, limit: 50,
       });
 
       const result = await handler.execute(
@@ -173,7 +150,7 @@ describe('DispatchNotificationHandler', () => {
 
     it('should allow non-critical when rate limit not hit', async () => {
       (rateLimiterService.check).mockResolvedValue({
-        allowed: true, currentCount: 1, limit: 2,
+        allowed: true, currentCount: 1, limit: 50,
       });
       portRegistry.execute.mockResolvedValue({ data: mockDispatchResult });
 
@@ -189,16 +166,16 @@ describe('DispatchNotificationHandler', () => {
     });
   });
 
-  // ── Port returns null → skip channel (AC#2) ──────────────────────────────
+  // ── Port returns null → skip channel ──────────────────────────────────────
 
   describe('execute — port returns null', () => {
     it('should skip channel when port returns null data', async () => {
       (rateLimiterService.check as jest.Mock)
-        .mockResolvedValueOnce({ allowed: true, currentCount: 1, limit: 2 }) // ZNS allowed
-        .mockResolvedValueOnce({ allowed: true, currentCount: 1, limit: 50 }); // Push allowed
+        .mockResolvedValueOnce({ allowed: true, currentCount: 1, limit: 50 }) // Push allowed
+        .mockResolvedValueOnce({ allowed: true, currentCount: 0, limit: Infinity }); // In-App allowed
       portRegistry.execute
-        .mockResolvedValueOnce({ data: null }) // ZNS port returns null
-        .mockResolvedValueOnce({ data: { dispatched: true, channel: 'push', rateLimited: false } }); // Push works
+        .mockResolvedValueOnce({ data: null }) // Push port returns null
+        .mockResolvedValueOnce({ data: { dispatched: true, channel: 'in_app', rateLimited: false } });
 
       const result = await handler.execute(
         new DispatchNotificationCommand({
@@ -209,8 +186,8 @@ describe('DispatchNotificationHandler', () => {
       );
 
       expect(result.dispatched).toBe(true);
-      expect(result.channel).toBe('push');
-      expect(result.fallbackChain).toEqual(['zns']);
+      expect(result.channel).toBe('in_app');
+      expect(result.fallbackChain).toEqual(['push']);
     });
   });
 });

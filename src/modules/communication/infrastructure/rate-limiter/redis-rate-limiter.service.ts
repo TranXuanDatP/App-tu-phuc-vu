@@ -1,15 +1,13 @@
 /**
  * Redis Rate Limiter Service (AC#1, #4 — FR55)
  *
- * Atomic Redis INCR rate limiting per notification channel.
- * Key format: ratelimit:notification:{userId}:{date}
+ * App-only notifications (Pc 2026-07-13): no SMS/Zalo/email.
+ * All notifications go through the App — push (FCM) + in-app inbox.
  *
  * Channel limits:
- *   ZNS:    2 msg/KH/ticket/day (FR55)
- *   Push:   50/day
- *   SMS:    10/day
- *   Email:  20/day
- *   In-App: ∞ (no limit)
+ *   Push:   50/day (FCM/APNs)
+ *   In-App: ∞ (no limit — notification center in the App)
+ *   ZNS/SMS/Email: disabled (0 = always rate limited)
  */
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
@@ -18,14 +16,14 @@ import type { ICacheService } from '@shared/caching/cache.interface';
 import type { NotificationChannel } from '../../application/dtos/notification.dto';
 
 const CHANNEL_LIMITS: Record<NotificationChannel, number> = {
-  zns: 2,
   push: 50,
-  sms: 10,
-  email: 20,
   in_app: Infinity,
+  zns: 0,
+  sms: 0,
+  email: 0,
 };
 
-const FALLBACK_CHAIN: NotificationChannel[] = ['zns', 'push', 'in_app'];
+const FALLBACK_CHAIN: NotificationChannel[] = ['push', 'in_app'];
 
 @Injectable()
 export class RedisRateLimiterService {
@@ -68,7 +66,7 @@ export class RedisRateLimiterService {
 
   /**
    * Get the fallback chain for critical notifications.
-   * Returns channels in priority order: ZNS → Push → In-App Inbox.
+   * App-only: Push (FCM) → In-App Inbox.
    */
   getFallbackChain(): NotificationChannel[] {
     return [...FALLBACK_CHAIN];

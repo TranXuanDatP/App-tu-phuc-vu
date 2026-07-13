@@ -37,7 +37,7 @@ describe('MockNotificationAdapter', () => {
 
       if (parsed.success) {
         expect(parsed.data.dispatched).toBe(true);
-        expect(parsed.data.channel).toBe('zns');
+        expect(parsed.data.channel).toBe('push');
         expect(parsed.data.rateLimited).toBe(false);
       }
     });

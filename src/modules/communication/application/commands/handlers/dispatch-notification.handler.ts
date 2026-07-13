@@ -34,11 +34,10 @@ export class DispatchNotificationHandler
     const { customerId, type, isCritical, channel } = command.payload;
 
     // Determine target channel(s)
-    // Pc (2026-07-06): SMS-first — Zalo OA not yet available; incidents prefer SMS.
-    const targetChannel = channel ?? 'sms';
-    const fallbackChain = isCritical
-      ? this.rateLimiterService.getFallbackChain()
-      : [targetChannel];
+    // Pc (2026-07-13): App-only notifications — no SMS/Zalo/email.
+    // Default = push (FCM when app in background). Critical fallback: push → in_app.
+    const targetChannel: NotificationChannel = channel ?? 'push';
+    const fallbackChain: NotificationChannel[] = isCritical ? ['push', 'in_app'] : [targetChannel];
 
     // Try each channel in the fallback chain
     const attemptedChannels: NotificationChannel[] = [];

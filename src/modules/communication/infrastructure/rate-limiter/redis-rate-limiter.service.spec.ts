@@ -9,35 +9,25 @@ describe('RedisRateLimiterService', () => {
     service = new RedisRateLimiterService(cacheService as any);
   });
 
-  describe('check — ZNS channel (limit 2)', () => {
-    it('should allow first ZNS call', async () => {
-      cacheService.incr.mockResolvedValue(1);
+  // ── App-only: ZNS/SMS/email disabled (limit 0) ──────────────────────────
 
+  describe('check — ZNS channel (disabled, limit 0)', () => {
+    it('should always block ZNS (disabled — App-only)', async () => {
       const result = await service.check('USR-001', 'zns');
-
-      expect(result.allowed).toBe(true);
-      expect(result.currentCount).toBe(1);
-      expect(result.limit).toBe(2);
-    });
-
-    it('should allow second ZNS call', async () => {
-      cacheService.incr.mockResolvedValue(2);
-
-      const result = await service.check('USR-001', 'zns');
-
-      expect(result.allowed).toBe(true);
-      expect(result.currentCount).toBe(2);
-    });
-
-    it('should block third ZNS call (rate limited)', async () => {
-      cacheService.incr.mockResolvedValue(3);
-
-      const result = await service.check('USR-001', 'zns');
-
       expect(result.allowed).toBe(false);
-      expect(result.currentCount).toBe(3);
+      expect(result.limit).toBe(0);
     });
   });
+
+  describe('check — sms channel (disabled, limit 0)', () => {
+    it('should always block SMS (disabled — App-only)', async () => {
+      const result = await service.check('USR-001', 'sms');
+      expect(result.allowed).toBe(false);
+      expect(result.limit).toBe(0);
+    });
+  });
+
+  // ── Push channel (limit 50) ──────────────────────────────────────────────
 
   describe('check — push channel (limit 50)', () => {
     it('should allow under limit', async () => {
@@ -58,16 +48,7 @@ describe('RedisRateLimiterService', () => {
     });
   });
 
-  describe('check — sms channel (limit 10)', () => {
-    it('should allow under limit', async () => {
-      cacheService.incr.mockResolvedValue(5);
-
-      const result = await service.check('USR-001', 'sms');
-
-      expect(result.allowed).toBe(true);
-      expect(result.limit).toBe(10);
-    });
-  });
+  // ── In-App channel (no limit) ────────────────────────────────────────────
 
   describe('check — in_app channel (no limit)', () => {
     it('should always allow', async () => {
@@ -79,11 +60,13 @@ describe('RedisRateLimiterService', () => {
     });
   });
 
+  // ── TTL management ────────────────────────────────────────────────────────
+
   describe('TTL management', () => {
     it('should set TTL on first increment', async () => {
       cacheService.incr.mockResolvedValue(1);
 
-      await service.check('USR-001', 'zns');
+      await service.check('USR-001', 'push');
 
       expect(cacheService.set).toHaveBeenCalledTimes(1);
       expect(cacheService.set.mock.calls[0][2]).toBe(86400);
@@ -92,7 +75,7 @@ describe('RedisRateLimiterService', () => {
     it('should NOT set TTL on subsequent increments', async () => {
       cacheService.incr.mockResolvedValue(2);
 
-      await service.check('USR-001', 'zns');
+      await service.check('USR-001', 'push');
 
       expect(cacheService.set).not.toHaveBeenCalled();
     });
@@ -100,30 +83,20 @@ describe('RedisRateLimiterService', () => {
     it('should use per-channel key for INCR', async () => {
       cacheService.incr.mockResolvedValue(1);
 
-      await service.check('USR-001', 'zns');
-
-      const incrKey = cacheService.incr.mock.calls[0][0];
-      expect(incrKey).toContain(':zns:');
-    });
-
-    it('should use different keys for different channels', async () => {
-      cacheService.incr.mockResolvedValue(1);
-
-      await service.check('USR-001', 'zns');
       await service.check('USR-001', 'push');
 
-      const keys = cacheService.incr.mock.calls.map((c: any[]) => c[0]);
-      expect(keys[0]).not.toBe(keys[1]);
-      expect(keys[0]).toContain(':zns:');
-      expect(keys[1]).toContain(':push:');
+      const incrKey = cacheService.incr.mock.calls[0][0];
+      expect(incrKey).toContain(':push:');
     });
   });
 
+  // ── Fallback chain ────────────────────────────────────────────────────────
+
   describe('getFallbackChain', () => {
-    it('should return ZNS → Push → In-App', () => {
+    it('should return Push → In-App (App-only)', () => {
       const chain = service.getFallbackChain();
 
-      expect(chain).toEqual(['zns', 'push', 'in_app']);
+      expect(chain).toEqual(['push', 'in_app']);
     });
 
     it('should return a copy (not mutable)', () => {
@@ -131,7 +104,7 @@ describe('RedisRateLimiterService', () => {
       chain.push('sms');
 
       const chain2 = service.getFallbackChain();
-      expect(chain2).toEqual(['zns', 'push', 'in_app']);
+      expect(chain2).toEqual(['push', 'in_app']);
     });
   });
 });

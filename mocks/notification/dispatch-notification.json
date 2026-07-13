@@ -1,5 +1,5 @@
 {
   "dispatched": true,
-  "channel": "zns",
+  "channel": "push",
   "rateLimited": false
 }
