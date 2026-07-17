@@ -1,36 +1,83 @@
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-all
-spec:
-  podSelector: {}
-  policyTypes:
-  - Ingress
-  - Egress
+# NetworkPolicy cho app — theo convention cluster (tham khảo neighbor water-network-bff-*).
+#
+# ⚠️ QUAN TRỌNG: podSelector phải SCOPE theo app (app: nestjs-app), KHÔNG được dùng `{}`
+# — vì `podSelector: {}` chọn MỌI pod trong namespace và chặn traffic của tất cả chúng,
+# "brick" cả namespace dùng chung (platform-core). Đây là bug đã được sửa (2026-07-17).
+#
+# Nhãn pod infra đã verify thực tế trong cluster platform-core:
+#   apisix=app:apisix | postgres=app:postgres | redis=app:redis
+# Namespace kube-system / observability mang nhãn `kubernetes.io/metadata.name`.
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-app-traffic
+  name: nestjs-app-default-deny
 spec:
   podSelector:
     matchLabels:
       app: nestjs-app
   policyTypes:
-  - Ingress
-  - Egress
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nestjs-app-allow
+spec:
+  podSelector:
+    matchLabels:
+      app: nestjs-app
+  policyTypes:
+    - Ingress
+    - Egress
+  # Ingress: BFF đứng sau APISIX gateway (convention cluster, port service = 3000).
+  # Nếu expose trực tiếp qua nginx ingress, thêm một from-rule cho ingress-nginx controller.
   ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: nestjs-app-ingress # Assuming ingress controller labeling or similar, usually we allow from all for public web app or from ingress controller specifically.
-      # For simplicity in this base template, often we start with allowing specific ports
-    ports:
-    - protocol: TCP
-      port: 3000
+    - from:
+        - podSelector:
+            matchLabels:
+              app: apisix
+      ports:
+        - protocol: TCP
+          port: 3000
+  # Egress: DNS + DB + Redis + observability (OTLP) + external HTTPS
   egress:
-  - to:
-    - ipBlock: # Allow DB/Redis/DNS
-        cidr: 0.0.0.0/0
-        except:
-        - 10.6.0.0/16 # Example internal
+    # DNS (kube-dns in kube-system)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # Postgres (DB_HOST=postgres)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - { protocol: TCP, port: 5432 }
+    # Redis (REDIS_HOST=redis)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - { protocol: TCP, port: 6379 }
+    # Observability — OTLP/gRPC traces
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - { protocol: TCP, port: 4317 }
+    # External HTTPS (OAuth, external APIs...) — giống neighbor water-network-bff
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - { protocol: TCP, port: 443 }
