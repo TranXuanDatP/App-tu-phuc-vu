@@ -1,0 +1,45 @@
+# app-tu-phuc-vu BFF THẬT (demo).
+# Image local-load vào node k3s (chưa qua registry):
+#   docker save app-tu-phuc-vu:0.1.0 | ssh water-dev 'sudo k3s ctr -n k8s.io images import -'
+# nodeName tino-32 vì image chỉ có ở node đó (tino-12 chưa có image).
+# Env từ ConfigMap (app-tu-phuc-vu-config) + Secret (app-tu-phuc-vu-secret) — xem 2 file đó.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-tu-phuc-vu
+  labels:
+    app: app-tu-phuc-vu
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app-tu-phuc-vu
+  template:
+    metadata:
+      labels:
+        app: app-tu-phuc-vu
+    spec:
+      nodeName: tino-32   # image local-load chỉ ở tino-32; practice-only
+      securityContext:
+        runAsNonRoot: true   # distroless :nonroot → UID 65532
+      containers:
+        - name: app
+          image: app-tu-phuc-vu:0.1.0
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef: { name: app-tu-phuc-vu-config }
+            - secretRef: { name: app-tu-phuc-vu-secret }
+          ports:
+            - containerPort: 3000
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          readinessProbe:
+            httpGet: { path: /health, port: 3000 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 12
+          livenessProbe:
+            httpGet: { path: /health, port: 3000 }
+            initialDelaySeconds: 40
+            periodSeconds: 10

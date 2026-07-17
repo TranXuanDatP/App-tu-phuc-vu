@@ -1,0 +1,49 @@
+# Postgres throwaway cho demo (giống docker-compose: postgres/postgres, db nestjs_project).
+# emptyDir = dữ liệu mất khi restart pod (OK cho demo; BFF re-migrate). KHÔNG dùng production.
+# nodeName tino-32 để cùng node với BFF (image local-load chỉ ở đó).
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-tu-phuc-vu-db
+  labels:
+    app: app-tu-phuc-vu-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: app-tu-phuc-vu-db }
+  template:
+    metadata:
+      labels: { app: app-tu-phuc-vu-db }
+    spec:
+      nodeName: tino-32
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - { name: POSTGRES_USER, value: postgres }
+            - { name: POSTGRES_PASSWORD, value: postgres }
+            - { name: POSTGRES_DB, value: nestjs_project }
+          ports:
+            - { containerPort: 5432 }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "postgres"] }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-tu-phuc-vu-db
+spec:
+  selector: { app: app-tu-phuc-vu-db }
+  ports:
+    - { port: 5432, targetPort: 5432 }

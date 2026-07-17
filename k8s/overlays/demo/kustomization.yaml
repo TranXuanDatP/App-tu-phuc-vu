@@ -1,0 +1,22 @@
+# Practice overlay cho namespace "demo" (water-platform k3s).
+#
+# TỰ ĐỨNG (KHÔNG kế thừa ../../base) vì base mang NetworkPolicy `default-deny-all`
+# (podSelector: {}) — nếu apply vào namespace dùng chung sẽ chặn traffic của MỌI pod
+# trong namespace đó, không chỉ của mình. Overlay `dev`/`staging`/`prod` hiện cũng
+# kế thừa bug này — cần sửa riêng khi deploy thật. Xem docs/dev-onboarding-my-access.md.
+#
+# Image đang là PLACEHOLDER (hashicorp/http-echo) để thực hành flow deploy mà chưa
+# cần docker login / push registry. Khi có creds registry, chỉ cần đổi `image:` trong
+# deployment.yaml thành registry-dev.dichvunuoc.vn/app-tu-phuc-vu:<tag>.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: demo
+
+resources:
+  - postgres.yaml
+  - config.yaml
+  - secret.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml

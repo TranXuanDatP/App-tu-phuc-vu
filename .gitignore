@@ -46,4 +46,7 @@ lerna-debug.log*
 /nest-app
 /nest-app-binary
 
+# Personal/local onboarding notes (SSH keys, fingerprints, IPs) — never commit
+/docs/dev-onboarding-my-access.md
+
 #

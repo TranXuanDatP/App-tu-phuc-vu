@@ -1,0 +1,23 @@
+# Non-sensitive config cho demo BFF. Demo-only values.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-tu-phuc-vu-config
+data:
+  DB_HOST: app-tu-phuc-vu-db
+  DB_PORT: "5432"
+  DB_USER: postgres
+  DB_NAME: nestjs_project
+  SERVICE_NAME: app-tu-phuc-vu
+  SERVICE_VERSION: "1.0.0"
+  LOG_LEVEL: info
+  BETTER_AUTH_URL: https://app-tu-phuc-vu-dev.dichvunuoc.vn
+  BETTER_AUTH_TRUSTED_ORIGINS: https://app-tu-phuc-vu-dev.dichvunuoc.vn
+  ZALO_APP_ID: demo-disabled
+  ZALO_REDIRECT_URI: https://app-tu-phuc-vu-dev.dichvunuoc.vn/api/auth/zalo/callback
+  ZALO_OA_ID: demo-disabled
+  ZALO_OA_APP_ID: demo-disabled
+  ZALO_OA_OTP_TEMPLATE_ID: demo-disabled
+  ZALO_OA_BASE_URL: https://openapi.zaloapp.com
+  BACKEND_BASE_URL: http://localhost:8080
+  NOTIFICATION_TENANT_ID: tnt_hawaco

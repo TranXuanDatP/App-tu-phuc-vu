@@ -1,0 +1,27 @@
+# Ingress theo convention cluster: host <name>-dev.dichvunuoc.vn + TLS letsencrypt-prod.
+# Lưu ý: để cert-manager cấp TLS + curl HTTPS được từ ngoài, admin phải trỏ DNS
+# A record app-tu-phuc-vu-dev.dichvunuoc.vn -> 180.93.137.109.
+# Trước khi có DNS: test HTTP qua ingress IP bằng curl --resolve (xem runbook).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-tu-phuc-vu
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - app-tu-phuc-vu-dev.dichvunuoc.vn
+      secretName: app-tu-phuc-vu-tls
+  rules:
+    - host: app-tu-phuc-vu-dev.dichvunuoc.vn
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app-tu-phuc-vu
+                port:
+                  number: 80
