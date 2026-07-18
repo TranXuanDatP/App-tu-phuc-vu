@@ -22,6 +22,18 @@ export const userStatusEnum = pgEnum('user_status', [
 ]);
 
 /**
+ * User Profile Status Enum — new-user identity (MVP)
+ * - incomplete: user created (OTP verified) but identity not yet resolved/collected
+ * - complete: identity resolved (existing customer via event) OR manually entered
+ * - no_match: identity lookup ran but no Customer 360 record found (must enter info)
+ */
+export const userProfileStatusEnum = pgEnum('user_profile_status', [
+  'incomplete',
+  'complete',
+  'no_match',
+]);
+
+/**
  * Users Table Schema
  *
  * Stores customer identity records in the BFF-owned PostgreSQL database.
@@ -56,8 +68,17 @@ export const usersTable = pgTable(
     image: varchar('image', { length: 1024 }),
     role: userRoleEnum('role').default('customer'),
     status: userStatusEnum('status').default('active'),
-    // Customer 360 link — set when the user is matched to a customer record
+    // Customer 360 link (mã KH) — set when matched to a customer record (event or manual)
     customerId: varchar('customer_id', { length: 128 }),
+    // ── New-user identity (MVP) ───────────────────────────────────────────────
+    // Collected via event (existing-customer match) or manual complete-profile screen.
+    fullName: varchar('full_name', { length: 255 }),
+    address: varchar('address', { length: 512 }),
+    // CCCD — AES-256-GCM ciphertext (encrypted via databaseHooks like email/phone)
+    cccd: varchar('cccd', { length: 512 }),
+    // CCCD blind index — HMAC-SHA256 for dedup lookup (multiple NULLs allowed)
+    cccdHash: varchar('cccd_hash', { length: 64 }),
+    profileStatus: userProfileStatusEnum('profile_status').default('incomplete'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
   },
@@ -66,6 +87,8 @@ export const usersTable = pgTable(
     uniqueIndex('idx_users_phone_hash').on(table.phoneHash),
     // Unique blind index for email lookup — prevents duplicate email registrations
     uniqueIndex('idx_users_email_hash').on(table.emailHash),
+    // Unique blind index for CCCD lookup — prevents duplicate CCCD registrations
+    uniqueIndex('idx_users_cccd_hash').on(table.cccdHash),
   ],
 );
 
