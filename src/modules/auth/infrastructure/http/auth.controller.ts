@@ -17,33 +17,32 @@ import {
 } from '@nestjs/swagger';
 import { PortHttpClient } from '@shared/port/port-http-client.service';
 import { PortRegistry } from '@shared/port';
+import { eq } from 'drizzle-orm';
+import { type DrizzleDB } from '@shared';
+import { DATABASE_WRITE_TOKEN } from '@core/constants/tokens';
+import { PII_ENCRYPTION_SERVICE_TOKEN } from '../../constants/tokens';
+import { PiiEncryptionService } from '../persistence/encryption/pii-encryption.service';
+import { usersTable } from '../persistence/drizzle/schema/user.schema';
 import {
-  RegisterPhoneSchema,
-} from '../../application/dtos/register-phone.dto';
+  CompleteProfileSchema,
+  SwaggerCompleteProfileDto,
+} from '../../application/dtos/complete-profile.dto';
 import {
   RegisterProviderSchema,  LinkProviderSchema,
-  VerifyOtpSchema,
 } from '../../application/dtos/register-provider.dto';
 import { ValidationException } from '@core/common';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import { Public } from '../decorators/public.decorator';
 import {
-  SwaggerRegisterPhoneDto,
-  SwaggerVerifyOtpDto,
   SwaggerRegisterProviderDto,
   SwaggerLinkProviderDto,
-  SwaggerVerifyOtpResponseDto,
   SwaggerProviderCallbackResponseDto,
   SwaggerLinkProviderResponseDto,
   SwaggerAuthResponseDto,
 } from '../../application/dtos/auth-swagger.dto';
 import type {
-  RegisterPhoneDto,
-} from '../../application/dtos/register-phone.dto';
-import type {
   RegisterProviderDto,
   LinkProviderDto,
-  VerifyOtpDto,
 } from '../../application/dtos/register-provider.dto';
 // NOTE: Provider linking (Zalo/Google/Facebook/Apple) is handled by better-auth's
 // OAuth flow — the BFF issues the authorization URL and better-auth links the
@@ -68,69 +67,10 @@ export class AuthController {
   constructor(
     private readonly portHttpClient: PortHttpClient,
     private readonly portRegistry: PortRegistry,
+    @Inject(DATABASE_WRITE_TOKEN) private readonly db: DrizzleDB,
+    @Inject(PII_ENCRYPTION_SERVICE_TOKEN)
+    private readonly piiEncryption: PiiEncryptionService,
   ) {}
-
-  /**
-   * POST /auth/register-phone
-   * Initiate phone/OTP registration. Sends OTP to the provided number.
-   * NOTE: OTP is sent via better-auth's phoneNumber plugin.
-   * AC#1
-   */
-  @Public()
-  @Post('register-phone')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Register / login with phone number — sends OTP' })
-  @ApiBody({ type: SwaggerRegisterPhoneDto })
-  @ApiResponse({ status: 200, description: 'OTP sent successfully' })
-  @ApiResponse({ status: 400, description: 'Validation error (invalid phone format)' })
-  async registerPhone(@Body() body: RegisterPhoneDto) {
-    const parsed = RegisterPhoneSchema.safeParse(body);
-    if (!parsed.success) {
-      throw new ValidationException(parsed.error.message);
-    }
-
-    this.logger.log(`Phone registration initiated for: ****${parsed.data.phoneNumber.slice(-4)}`);
-
-    return {
-      message: 'OTP sent to phone number. Verify via POST /auth/verify-otp.',
-      phoneNumber: parsed.data.phoneNumber,
-    };
-  }
-
-  /**
-   * POST /auth/verify-otp
-   * Verify OTP code for phone registration/login.
-   *
-   * Flow: validate → better-auth verifies OTP (creates/updates user in local DB)
-   *       → sync customer to Backend API
-   * AC#1
-   */
-  @Public()
-  @Post('verify-otp')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Verify OTP code for phone registration/login' })
-  @ApiBody({ type: SwaggerVerifyOtpDto })
-  @ApiResponse({ status: 200, type: SwaggerVerifyOtpResponseDto })
-  @ApiResponse({ status: 400, description: 'Validation error (invalid OTP format)' })
-  async verifyOtp(@Body() body: VerifyOtpDto) {
-    const parsed = VerifyOtpSchema.safeParse(body);
-    if (!parsed.success) {
-      throw new ValidationException(parsed.error.message);
-    }
-
-    // Delegate OTP verification to better-auth
-    // better-auth's phoneNumber plugin handles verification and user creation
-    // The frontend should call /api/auth/verify-phone directly,
-    // but we keep this endpoint as a documented API surface
-    this.logger.log(`OTP verification for phone ending: ...${parsed.data.phoneNumber.slice(-4)}`);
-
-    // TODO: Wire to better-auth's verify-phone endpoint
-    // For now, return validation success — actual verification via /api/auth/verify-phone
-    return {
-      message: 'OTP validated. Verify via better-auth /api/auth/verify-phone for full flow.',
-      phoneNumber: parsed.data.phoneNumber,
-    };
-  }
 
   /**
    * POST /auth/provider/callback
@@ -232,27 +172,124 @@ export class AuthController {
 
   /**
    * GET /auth/me
-   * Get current authenticated user profile.
-   * Requires valid session — fetches from Backend API.
+   * Get current authenticated user profile + identity status.
+   * The mobile app polls this after OTP to decide routing:
+   *   profileStatus 'complete' → dashboard; 'no_match' → complete-profile screen.
+   * NOTE: never returns the CCCD value — only `hasCccd` boolean.
    */
   @Get('me')
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Get current authenticated user profile' })
+  @ApiOperation({ summary: 'Get current authenticated user profile + identity status' })
   @ApiResponse({ status: 200, type: SwaggerAuthResponseDto })
   @ApiResponse({ status: 401, description: 'Authentication required' })
   async getMe(@CurrentUser('id') userId: string) {
+    const rows = await this.db
+      .select({
+        userId: usersTable.id,
+        fullName: usersTable.fullName,
+        cccd: usersTable.cccd,
+        customerId: usersTable.customerId,
+        profileStatus: usersTable.profileStatus,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
 
-    // TODO: When Backend API is available:
-    // return this.portHttpClient.request({
-    //   url: `${backendUrl}/users/${userId}`,
-    //   method: 'GET',
-    //   portName: 'customer-profile',
-    // });
+    const user = rows[0];
+    if (!user) {
+      return {
+        userId,
+        profileStatus: 'incomplete' as const,
+        fullName: null,
+        hasCccd: false,
+        customerId: null,
+        linked: false,
+      };
+    }
 
-    // Session exists — return minimal profile from session
     return {
       userId,
-      message: 'Session verified. Full profile will be fetched from Backend API when available.',
+      profileStatus: user.profileStatus ?? 'incomplete',
+      fullName: user.fullName,
+      hasCccd: !!user.cccd,
+      customerId: user.customerId,
+      linked: !!user.customerId,
+    };
+  }
+
+  /**
+   * POST /auth/complete-profile
+   * Complete identity profile for a NEW user or one whose identity resolution
+   * returned no Customer 360 match. Collects Họ tên, Địa chỉ, CCCD (+ optional
+   * mã KH to link an existing customer). CCCD is encrypted (AES-256-GCM) with a
+   * HMAC blind index. Sets profile_status='complete'.
+   */
+  @Post('complete-profile')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: 'Complete identity profile (new user / no Customer 360 match)',
+  })
+  @ApiBody({ type: SwaggerCompleteProfileDto })
+  @ApiResponse({ status: 200, description: 'Profile completed' })
+  @ApiResponse({ status: 400, description: 'Validation error / invalid mã KH' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  async completeProfile(
+    @CurrentUser('id') userId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = CompleteProfileSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationException(parsed.error.message);
+    }
+    const { fullName, address, cccd, maKh } = parsed.data;
+
+    // Optional: link an existing Customer 360 record by mã KH.
+    let linkedCustomerId: string | null = null;
+    if (maKh) {
+      try {
+        const result = await this.portRegistry.execute(
+          'customer-profile',
+          'get-profile',
+          { customerId: maKh },
+        );
+        if (!result?.data) {
+          throw new ValidationException(
+            `Mã khách hàng '${maKh}' không tồn tại`,
+          );
+        }
+        linkedCustomerId =
+          (result.data as { customerId?: string }).customerId ?? maKh;
+      } catch (e) {
+        if (e instanceof ValidationException) throw e;
+        throw new ValidationException(
+          `Không thể xác minh mã khách hàng '${maKh}'`,
+        );
+      }
+    }
+
+    // Persist identity. CCCD encrypted (AES-256-GCM) + HMAC blind index for dedup.
+    await this.db
+      .update(usersTable)
+      .set({
+        fullName,
+        address,
+        cccd: this.piiEncryption.encrypt(cccd),
+        cccdHash: this.piiEncryption.hashForLookup(cccd),
+        ...(linkedCustomerId ? { customerId: linkedCustomerId } : {}),
+        profileStatus: 'complete',
+        updatedAt: new Date(),
+      })
+      .where(eq(usersTable.id, userId));
+
+    this.logger.log(
+      `Profile completed for user ${userId} (linked=${!!linkedCustomerId})`,
+    );
+
+    return {
+      ok: true,
+      profileStatus: 'complete' as const,
+      linked: !!linkedCustomerId,
+      ...(linkedCustomerId ? { customerId: linkedCustomerId } : {}),
     };
   }
 
