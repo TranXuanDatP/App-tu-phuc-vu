@@ -56,7 +56,7 @@ BFF gọi customer-service cho 3 việc chính (+ 3 việc phụ đã có):
 - `customerId` = mã KH (dùng để link với user ở BFF). Format do customer-service tự chọn (gợi ý: prefix theo khu vực + số, vd `QN-0912345`).
 - `classification` enum **3 giá trị**: `sinh_hoat | san_xuat | hanh_chinh`. (Đừng dùng `kcn`/`dich_vu` — lệch với contract BFF.)
 - `address` phải **structured** (street/ward/district/city) + kèm `fullAddress` đã join. BFF thu thập 4 phần từ form đăng ký; customer-service tự build `fullAddress` hoặc BFF gửi sẵn (xem §2.3).
-- **Không trả CCCD** trong record này (CCCD do BFF lưu riêng ở bảng user, đã mã hoá). Nếu customer-service cũng cần lưu CCCD để dedup, bàn thêm (xem §5).
+- **Không có trường CCCD** — register không thu CCCD (xác thực định danh là kế hoạch riêng, chưa chốt — xem §4.3). Record chỉ là hồ sơ khách hàng.
 
 ### 2.2. `create-customer` — input (BFF gửi khi đăng ký)
 
@@ -139,14 +139,17 @@ Nếu team quen dùng envelope `{success, data}`, báo trước để BFF adapte
 ### 4.2. `create-customer` sinh `customerId`
 - Sinh mã KH duy nhất, trả lại trong record. BFF sẽ gán `customerId` này vào user
   (link hồ sơ KH ↔ tài khoản app).
-- **Dedup**: nên kiểm tra trùng SĐT (và tuỳ chọn CCCD) trước khi tạo → 409 nếu trùng.
+- **Dedup**: kiểm tra trùng **SĐT** trước khi tạo → 409 nếu trùng. (CCCD chưa thu — xem §4.3.)
 
-### 4.3. PII / CCCD (cần chốt)
-- Hiện BFF lưu CCCD ở bảng user (mã hoá AES-256-GCM + HMAC blind index), **không** gửi
-  CCCD cho customer-service ở `create-customer`.
-- **Hỏi team**: customer-service có cần lưu CCCD không (để dedup / đối soát toàn hệ thống)?
-  - Nếu CÓ → bổ sung trường `cccd` (cipher) + `cccdHash` vào record, BFF sẽ gửi kèm.
-  - Nếu KHÔNG → giữ nguyên, customer-service chỉ dedup theo SĐT.
+### 4.3. CCCD / xác thực định danh (chưa chốt — KHÔNG thu ở register)
+- **Quyết định (2026-07-24)**: register **KHÔNG thu CCCD** — "xác thực bằng CCCD" mới là
+  kế hoạch, chưa chốt (memory `cskh-identity-verification-pending`). Register chỉ thu Họ
+  tên + phân loại + địa chỉ (+ email tuỳ chọn).
+- Bảng `users` vẫn có cột `cccd`/`cccd_hash` (nullable, migration 0005) — để dùng KHI NÀO
+  chốt bước xác thực định danh. Hiện register không ghi các cột này.
+- `create-customer` payload **không chứa CCCD**. Customer-service dedup theo **SĐT**.
+- Khi chốt xác thực CCCD → bổ sung: thu CCCD ở register + gửi customer-service (nếu cần
+  dedup/đối soát) + encrypt (PiiEncryptionService đã có sẵn).
 
 ---
 
@@ -185,7 +188,7 @@ chỉ source dữ liệu chuyển từ mock sang customer-service thật.
 - [ ] `find-by-phone` phone-aware + normalize SĐT VN (§4.1) — **quan trọng nhất**.
 - [ ] `create-customer` sinh `customerId` + dedup phone (§4.2).
 - [ ] Validate JWT downstream / đồng ý cơ chế auth (§5).
-- [ ] Quyết định lưu CCCD hay không (§4.3) — báo lại BFF.
+- [ ] (Khi chốt xác thực CCCD) bổ sung thu CCCD ở register + gửi customer-service (§4.3).
 - [ ] Confirm envelope raw-object vs `{success,data}` (§3).
 - [ ] Sample data: seed ≥ 1 "khách cũ" theo SĐT để BFF test nhánh match (hiện mock seed `0987654321` → QN-0912345).
 

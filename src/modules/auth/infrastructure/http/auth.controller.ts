@@ -20,8 +20,6 @@ import { PortRegistry } from '@shared/port';
 import { eq } from 'drizzle-orm';
 import { type DrizzleDB } from '@shared';
 import { DATABASE_WRITE_TOKEN } from '@core/constants/tokens';
-import { PII_ENCRYPTION_SERVICE_TOKEN } from '../../constants/tokens';
-import { PiiEncryptionService } from '../persistence/encryption/pii-encryption.service';
 import { usersTable } from '../persistence/drizzle/schema/user.schema';
 import {
   RegisterSchema,
@@ -69,8 +67,6 @@ export class AuthController {
     private readonly portHttpClient: PortHttpClient,
     private readonly portRegistry: PortRegistry,
     @Inject(DATABASE_WRITE_TOKEN) private readonly db: DrizzleDB,
-    @Inject(PII_ENCRYPTION_SERVICE_TOKEN)
-    private readonly piiEncryption: PiiEncryptionService,
   ) {}
 
   /**
@@ -244,7 +240,7 @@ export class AuthController {
     if (!parsed.success) {
       throw new ValidationException(parsed.error.message);
     }
-    const { fullName, cccd, classification, address, email } = parsed.data;
+    const { fullName, classification, address, email } = parsed.data;
 
     // Attach the user's verified phone (plaintext per phoneNumber plugin) so
     // find-by-phone resolves them after registration.
@@ -269,15 +265,13 @@ export class AuthController {
     );
     const customerId = created.data.customerId;
 
-    // Persist identity on the user row + link the new customer. CCCD encrypted
-    // + HMAC blind index (NOT via better-auth hooks — column isn't better-auth-managed).
+    // Persist identity on the user row + link the new customer.
+    // (CCCD/identity verification is a separate undecided plan — not collected here.)
     await this.db
       .update(usersTable)
       .set({
         fullName,
         address: `${address.street}, ${address.ward}, ${address.district}, ${address.city}`,
-        cccd: this.piiEncryption.encrypt(cccd),
-        cccdHash: this.piiEncryption.hashForLookup(cccd),
         customerId,
         profileStatus: 'complete',
         updatedAt: new Date(),
