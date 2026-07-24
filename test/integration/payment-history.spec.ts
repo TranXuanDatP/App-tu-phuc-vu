@@ -1,22 +1,19 @@
 /**
  * Integration Test — Payment History
  *
- * Full flow: QueryBus → GetPaymentHistoryHandler → PortRegistry → MockAdapter → JSON
- * Tests the payment history query with pagination.
+ * Full flow: PaymentService.getPaymentHistory → PortRegistry → MockPaymentAdapter
+ * → JSON. Tests the payment history read with pagination.
  *
  * AC: #1 (payment history), #3 (no cache — transaction tier)
  */
 
-import { Test, TestingModule } from '@nestjs/testing';
-import { CqrsModule, QueryBus } from '@nestjs/cqrs';
 import { EndpointConfigService } from '../../src/libs/shared/endpoint-config/endpoint-config.service';
 import { StructuredLogger } from '../../src/libs/shared/observability/structured-logger.service';
 import { FallbackProvider } from '../../src/libs/shared/resilience/fallback.provider';
 import { PortRegistry } from '../../src/libs/shared/port/port-registry.service';
 import { CACHE_SERVICE_TOKEN } from '../../src/libs/core/constants/tokens';
-import { MockPaymentAdapter } from '../../src/modules/payment/infrastructure/ports/payment.port';
-import { GetPaymentHistoryHandler } from '../../src/modules/payment/application/queries/handlers/get-payment-history.handler';
-import { GetPaymentHistoryQuery } from '../../src/modules/payment/application/queries/get-payment-history.query';
+import { MockPaymentAdapter } from '../../src/modules/payment/clients/payment.client';
+import { PaymentService } from '../../src/modules/payment/payment.service';
 
 const mockCacheService = {
   get: jest.fn().mockResolvedValue(null),
@@ -30,11 +27,11 @@ const mockCacheService = {
   incr: jest.fn().mockResolvedValue(1),
   decr: jest.fn().mockResolvedValue(0),
   ttl: jest.fn().mockResolvedValue(-1),
+  deleteByPattern: jest.fn().mockResolvedValue(0),
 };
 
 describe('Payment History Integration', () => {
-  let module: TestingModule;
-  let queryBus: QueryBus;
+  let paymentService: PaymentService;
   let configService: EndpointConfigService;
   let originalBackendsUrl: string | undefined;
 
@@ -59,21 +56,15 @@ describe('Payment History Integration', () => {
     const mockPaymentAdapter = new MockPaymentAdapter();
     portRegistry.register('payment', mockPaymentAdapter, mockPaymentAdapter);
 
-    module = await Test.createTestingModule({
-      imports: [CqrsModule],
-      providers: [
-        { provide: PortRegistry, useValue: portRegistry },
-        { provide: CACHE_SERVICE_TOKEN, useValue: mockCacheService },
-        GetPaymentHistoryHandler,
-      ],
-    }).compile();
-
-    await module.init();
-    queryBus = module.get(QueryBus);
+    paymentService = new PaymentService(
+      portRegistry as any,
+      mockCacheService as any,
+      { getExisting: jest.fn().mockResolvedValue(null), store: jest.fn().mockResolvedValue(undefined) } as any,
+      { execute: jest.fn().mockResolvedValue(undefined) } as any,
+    );
   });
 
   afterAll(async () => {
-    await module.close();
     await configService.onModuleDestroy();
     if (originalBackendsUrl === undefined) {
       delete process.env.BACKEND_BASE_URL;
@@ -82,13 +73,11 @@ describe('Payment History Integration', () => {
     }
   });
 
-  // ── AC#1: Payment History — QueryBus → Handler → PortRegistry → MockAdapter → JSON
+  // ── AC#1: Payment History — Service → PortRegistry → MockAdapter → JSON
 
-  describe('GET /payments/history — QueryBus → Handler → PortRegistry → MockAdapter → JSON', () => {
+  describe('GET /payments/history — Service → PortRegistry → MockAdapter → JSON', () => {
     it('should return paginated payment history end-to-end', async () => {
-      const result = await queryBus.execute(
-        new GetPaymentHistoryQuery('USR-001', { page: 1, limit: 10 }),
-      );
+      const result = await paymentService.getPaymentHistory('USR-001', { page: 1, limit: 10 });
 
       expect(result).toBeDefined();
       expect(result.payments).toBeInstanceOf(Array);
@@ -100,9 +89,7 @@ describe('Payment History Integration', () => {
     });
 
     it('should return items with valid payment history shape', async () => {
-      const result = await queryBus.execute(
-        new GetPaymentHistoryQuery('USR-001', { page: 1, limit: 10 }),
-      );
+      const result = await paymentService.getPaymentHistory('USR-001', { page: 1, limit: 10 });
 
       const item = result.payments[0];
       expect(item.paymentId).toBeDefined();

@@ -1,26 +1,21 @@
 /**
  * Integration Test — Payment Module
  *
- * Full flow: CommandBus → Handler → PortRegistry → MockAdapter → JSON
+ * Full flow: PaymentService.createPayment → PortRegistry → MockAdapters → JSON.
  * Tests the sequential orchestration: verify invoice → create payment.
  *
  * AC: #1 (create payment), #2 (no cache), #4 (idempotency via PortRegistry)
  */
 
-import { Test, TestingModule } from '@nestjs/testing';
-import { CqrsModule, CommandBus } from '@nestjs/cqrs';
 import { EndpointConfigService } from '../../src/libs/shared/endpoint-config/endpoint-config.service';
 import { StructuredLogger } from '../../src/libs/shared/observability/structured-logger.service';
 import { FallbackProvider } from '../../src/libs/shared/resilience/fallback.provider';
 import { PortRegistry } from '../../src/libs/shared/port/port-registry.service';
 import { CACHE_SERVICE_TOKEN } from '../../src/libs/core/constants/tokens';
-import { MockPaymentAdapter } from '../../src/modules/payment/infrastructure/ports/payment.port';
-import { MockInvoiceAdapter } from '../../src/modules/billing/infrastructure/ports/invoice.port';
-import { CreatePaymentHandler } from '../../src/modules/payment/application/commands/handlers/create-payment.handler';
-import { CreatePaymentCommand } from '../../src/modules/payment/application/commands/create-payment.command';
+import { MockPaymentAdapter } from '../../src/modules/payment/clients/payment.client';
+import { MockInvoiceAdapter } from '../../src/modules/billing/clients/invoice.client';
+import { PaymentService } from '../../src/modules/payment/payment.service';
 import { IPortAdapter } from '../../src/libs/shared/port/port.interface';
-import { PortFallbackException } from '../../src/libs/shared/port/port-exceptions';
-import { ForbiddenException } from '../../src/libs/core';
 
 const mockCacheService = {
   get: jest.fn().mockResolvedValue(null),
@@ -34,11 +29,11 @@ const mockCacheService = {
   incr: jest.fn().mockResolvedValue(1),
   decr: jest.fn().mockResolvedValue(0),
   ttl: jest.fn().mockResolvedValue(-1),
+  deleteByPattern: jest.fn().mockResolvedValue(0),
 };
 
 describe('Payment Integration', () => {
-  let module: TestingModule;
-  let commandBus: CommandBus;
+  let paymentService: PaymentService;
   let configService: EndpointConfigService;
   let portRegistry: PortRegistry;
   let originalBackendsUrl: string | undefined;
@@ -68,22 +63,15 @@ describe('Payment Integration', () => {
     const mockPaymentAdapter = new MockPaymentAdapter();
     portRegistry.register('payment', mockPaymentAdapter, mockPaymentAdapter);
 
-    module = await Test.createTestingModule({
-      imports: [CqrsModule],
-      providers: [
-        { provide: PortRegistry, useValue: portRegistry },
-        { provide: CACHE_SERVICE_TOKEN, useValue: mockCacheService },
-        MockPaymentAdapter,
-        CreatePaymentHandler,
-      ],
-    }).compile();
-
-    await module.init();
-    commandBus = module.get(CommandBus);
+    paymentService = new PaymentService(
+      portRegistry as any,
+      mockCacheService as any,
+      { getExisting: jest.fn().mockResolvedValue(null), store: jest.fn().mockResolvedValue(undefined) } as any,
+      { execute: jest.fn().mockResolvedValue(undefined) } as any,
+    );
   });
 
   afterAll(async () => {
-    await module.close();
     await configService.onModuleDestroy();
     if (originalBackendsUrl === undefined) {
       delete process.env.BACKEND_BASE_URL;
@@ -94,11 +82,12 @@ describe('Payment Integration', () => {
 
   // ── AC#1: Create Payment — Sequential Orchestration ────────────────────────
 
-  describe('POST /payments — CommandBus → Handler → PortRegistry → MockAdapter → JSON', () => {
+  describe('POST /payments — Service → PortRegistry → MockAdapter → JSON', () => {
     it('should verify unpaid invoice and create payment end-to-end', async () => {
-      const result = await commandBus.execute(
-        new CreatePaymentCommand('USR-001', 'INV-2026-001', 'qr_code'),
-      );
+      const result = await paymentService.createPayment('USR-001', {
+        invoiceId: 'INV-2026-001',
+        method: 'qr_code',
+      });
 
       expect(result).toBeDefined();
       expect(result.paymentId).toBeDefined();
@@ -115,9 +104,10 @@ describe('Payment Integration', () => {
     });
 
     it('should return payment with valid response shape', async () => {
-      const result = await commandBus.execute(
-        new CreatePaymentCommand('USR-001', 'INV-2026-001', 'qr_code'),
-      );
+      const result = await paymentService.createPayment('USR-001', {
+        invoiceId: 'INV-2026-001',
+        method: 'qr_code',
+      });
 
       expect(result).toHaveProperty('paymentId');
       expect(result).toHaveProperty('invoiceId');
@@ -164,7 +154,7 @@ describe('Payment Integration', () => {
       portRegistry.register('invoice', paidInvoiceAdapter, paidInvoiceAdapter);
 
       await expect(
-        commandBus.execute(new CreatePaymentCommand('USR-001', 'INV-PAID', 'qr_code')),
+        paymentService.createPayment('USR-001', { invoiceId: 'INV-PAID', method: 'qr_code' }),
       ).rejects.toThrow('Current status: paid');
 
       // Restore original adapter for subsequent tests

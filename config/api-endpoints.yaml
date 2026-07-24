@@ -32,8 +32,8 @@ services:
       errorThreshold: 50
       resetTimeout: 10000
       minRequests: 5
-    description: "Customer 360° profile data"
-    methods: ["get-profile", "update-profile", "search"]
+    description: "Customer 360° profile data (flip `adapter: live` when customer-service is ready — see docs/customer-service-contract.md)"
+    methods: ["get-profile", "find-by-phone", "create-customer", "get-timeline", "get-related-accounts", "update-profile"]
 
   contract:
     adapter: mock

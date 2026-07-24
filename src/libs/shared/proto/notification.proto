@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package notification.v1;
+
+// Copied verbatim from platform-core/services/notification-be-rs/proto/notification.proto.
+// This is the real gRPC contract for the notification platform (notification-be-rs).
+// BFF → NotificationService/Send with a Keycloak SA token (authorization: Bearer ...).
+
+service NotificationService {
+  rpc Send (SendRequest) returns (SendReply);
+}
+
+message Recipient {
+  string user_id = 1;
+  string phone = 2;
+  string email = 3;
+}
+
+message SendRequest {
+  string template_key = 1;
+  string tenant_id = 2;
+  repeated Recipient recipients = 3;
+  repeated string channels = 4;   // "email" | "sms" | "noti"; empty = template defaults
+  string data_json = 5;           // JSON object as string (render data)
+  string locale = 6;              // default "vi-VN"
+  string idempotency_key = 7;     // optional; empty = no dedup
+}
+
+message SendReply {
+  string notification_id = 1;
+  string status = 2;              // "queued" | "duplicate"
+}

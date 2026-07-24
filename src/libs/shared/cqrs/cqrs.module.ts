@@ -3,7 +3,6 @@ import { CqrsModule } from '@nestjs/cqrs';
 import { NestCommandBus } from './buses/nest-command-bus';
 import { NestQueryBus } from './buses/nest-query-bus';
 import { EventBus } from './events/event-bus';
-import { IdempotencyService } from './idempotency/idempotency.service';
 
 import { COMMAND_BUS_TOKEN, QUERY_BUS_TOKEN, EVENT_BUS_TOKEN } from '@core';
 
@@ -43,8 +42,6 @@ export { COMMAND_BUS_TOKEN, QUERY_BUS_TOKEN, EVENT_BUS_TOKEN };
     NestCommandBus,
     NestQueryBus,
     EventBus,
-    // Idempotency support for commands
-    IdempotencyService,
     // Provide interfaces using implementation classes (Dependency Inversion)
     {
       provide: COMMAND_BUS_TOKEN,
@@ -66,7 +63,6 @@ export { COMMAND_BUS_TOKEN, QUERY_BUS_TOKEN, EVENT_BUS_TOKEN };
     NestCommandBus,
     NestQueryBus,
     EventBus,
-    IdempotencyService,
     // Export interface tokens
     COMMAND_BUS_TOKEN,
     QUERY_BUS_TOKEN,

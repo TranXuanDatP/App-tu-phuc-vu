@@ -24,9 +24,10 @@ import { PII_ENCRYPTION_SERVICE_TOKEN } from '../../constants/tokens';
 import { PiiEncryptionService } from '../persistence/encryption/pii-encryption.service';
 import { usersTable } from '../persistence/drizzle/schema/user.schema';
 import {
-  CompleteProfileSchema,
-  SwaggerCompleteProfileDto,
-} from '../../application/dtos/complete-profile.dto';
+  RegisterSchema,
+  SwaggerRegisterDto,
+} from '../../application/dtos/register.dto';
+import type { CustomerProfileResponse } from '../../../account/dto/customer-profile.dto';
 import {
   RegisterProviderSchema,  LinkProviderSchema,
 } from '../../application/dtos/register-provider.dto';
@@ -218,79 +219,139 @@ export class AuthController {
   }
 
   /**
-   * POST /auth/complete-profile
-   * Complete identity profile for a NEW user or one whose identity resolution
-   * returned no Customer 360 match. Collects Họ tên, Địa chỉ, CCCD (+ optional
-   * mã KH to link an existing customer). CCCD is encrypted (AES-256-GCM) with a
-   * HMAC blind index. Sets profile_status='complete'.
+   * POST /auth/register
+   * Register a NEW customer via the app — creates a Customer 360 record (mock-first
+   * via the customer-profile port's `create-customer` method) and links it to the
+   * auth user. Collects full info (Họ tên, CCCD, phân loại, địa chỉ cấu trúc).
+   * CCCD encrypted (AES-256-GCM) + HMAC blind index. Sets profile_status='complete'.
+   *
+   * Replaces the former complete-profile endpoint (which only wrote local identity
+   * without creating a downstream customer). For users who already have a mã KH,
+   * use /auth/link-customer instead.
    */
-  @Post('complete-profile')
+  @Post('register')
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({
-    summary: 'Complete identity profile (new user / no Customer 360 match)',
-  })
-  @ApiBody({ type: SwaggerCompleteProfileDto })
-  @ApiResponse({ status: 200, description: 'Profile completed' })
-  @ApiResponse({ status: 400, description: 'Validation error / invalid mã KH' })
+  @ApiOperation({ summary: 'Register a new customer (app signup → Customer 360)' })
+  @ApiBody({ type: SwaggerRegisterDto })
+  @ApiResponse({ status: 200, description: 'Customer created + profile completed' })
+  @ApiResponse({ status: 400, description: 'Validation error' })
   @ApiResponse({ status: 401, description: 'Authentication required' })
-  async completeProfile(
+  async register(
     @CurrentUser('id') userId: string,
     @Body() body: unknown,
   ) {
-    const parsed = CompleteProfileSchema.safeParse(body);
+    const parsed = RegisterSchema.safeParse(body);
     if (!parsed.success) {
       throw new ValidationException(parsed.error.message);
     }
-    const { fullName, address, cccd, maKh } = parsed.data;
+    const { fullName, cccd, classification, address, email } = parsed.data;
 
-    // Optional: link an existing Customer 360 record by mã KH.
-    let linkedCustomerId: string | null = null;
-    if (maKh) {
-      try {
-        const result = await this.portRegistry.execute(
-          'customer-profile',
-          'get-profile',
-          { customerId: maKh },
-        );
-        if (!result?.data) {
-          throw new ValidationException(
-            `Mã khách hàng '${maKh}' không tồn tại`,
-          );
-        }
-        linkedCustomerId =
-          (result.data as { customerId?: string }).customerId ?? maKh;
-      } catch (e) {
-        if (e instanceof ValidationException) throw e;
-        throw new ValidationException(
-          `Không thể xác minh mã khách hàng '${maKh}'`,
-        );
-      }
-    }
+    // Attach the user's verified phone (plaintext per phoneNumber plugin) so
+    // find-by-phone resolves them after registration.
+    const userRows = await this.db
+      .select({ phoneNumber: usersTable.phoneNumber })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    const phone = userRows[0]?.phoneNumber ?? null;
 
-    // Persist identity. CCCD encrypted (AES-256-GCM) + HMAC blind index for dedup.
+    // Create the Customer 360 record (mock-first; swap to a live adapter later).
+    const created = await this.portRegistry.execute<CustomerProfileResponse>(
+      'customer-profile',
+      'create-customer',
+      {
+        fullName,
+        classification,
+        address,
+        contactInfo: { phone, email: email ?? null, contactAddress: null },
+        status: 'active',
+      },
+    );
+    const customerId = created.data.customerId;
+
+    // Persist identity on the user row + link the new customer. CCCD encrypted
+    // + HMAC blind index (NOT via better-auth hooks — column isn't better-auth-managed).
     await this.db
       .update(usersTable)
       .set({
         fullName,
-        address,
+        address: `${address.street}, ${address.ward}, ${address.district}, ${address.city}`,
         cccd: this.piiEncryption.encrypt(cccd),
         cccdHash: this.piiEncryption.hashForLookup(cccd),
-        ...(linkedCustomerId ? { customerId: linkedCustomerId } : {}),
+        customerId,
         profileStatus: 'complete',
         updatedAt: new Date(),
       })
       .where(eq(usersTable.id, userId));
 
-    this.logger.log(
-      `Profile completed for user ${userId} (linked=${!!linkedCustomerId})`,
-    );
+    this.logger.log(`Registered new customer ${customerId} for user ${userId}`);
 
     return {
       ok: true,
       profileStatus: 'complete' as const,
-      linked: !!linkedCustomerId,
-      ...(linkedCustomerId ? { customerId: linkedCustomerId } : {}),
+      customerId,
+      linked: true,
     };
+  }
+
+  /**
+   * POST /auth/check-registration
+   * Match the authenticated user against Customer 360 by phone — called by the
+   * mobile app right after OTP to decide routing: a matched (existing) customer
+   * goes straight to the dashboard; an unmatched user is shown the
+   * "Bạn chưa đăng ký tài khoản" screen. On a match, links the customer and sets
+   * profile_status='complete' so the limited-mode gate opens.
+   *
+   * Synchronous stand-in for the async (RabbitMQ) identity-resolution event path
+   * — same port method (`customer-profile find-by-phone`).
+   */
+  @Post('check-registration')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Match user against Customer 360 by phone (post-OTP routing)' })
+  @ApiResponse({ status: 200, description: 'Whether the user is registered' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  async checkRegistration(@CurrentUser('id') userId: string) {
+    const userRows = await this.db
+      .select({ phoneNumber: usersTable.phoneNumber })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    const phone = userRows[0]?.phoneNumber ?? null;
+
+    if (phone) {
+      try {
+        const result = await this.portRegistry.execute<CustomerProfileResponse>(
+          'customer-profile',
+          'find-by-phone',
+          { phone },
+        );
+        const customer = result?.data;
+        if (customer) {
+          await this.db
+            .update(usersTable)
+            .set({
+              customerId: customer.customerId,
+              profileStatus: 'complete',
+              updatedAt: new Date(),
+            })
+            .where(eq(usersTable.id, userId));
+          this.logger.log(
+            `check-registration: matched ${customer.customerId} for user ${userId}`,
+          );
+          return {
+            registered: true,
+            profileStatus: 'complete' as const,
+            customerId: customer.customerId,
+          };
+        }
+      } catch (err) {
+        this.logger.warn(
+          `check-registration find-by-phone failed: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    return { registered: false, profileStatus: 'incomplete' as const };
   }
 
   @Post('link-customer')

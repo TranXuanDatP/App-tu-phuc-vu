@@ -1,6 +1,7 @@
 import { Module, Provider } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
+import { PortRegistry } from '@shared/port';
 import {
   DATABASE_WRITE_TOKEN,
 } from '@core/constants/tokens';
@@ -54,10 +55,10 @@ import { SessionAuthGuard } from './infrastructure/guards/session-auth.guard';
     // Better Auth Instance (needs DB + config for drizzleAdapter)
     {
       provide: BETTER_AUTH_INSTANCE_TOKEN,
-      useFactory: (db: unknown, configService: ConfigService) => {
-        return createBetterAuth(db, configService);
+      useFactory: (db: unknown, configService: ConfigService, portRegistry: PortRegistry) => {
+        return createBetterAuth(db, configService, portRegistry);
       },
-      inject: [DATABASE_WRITE_TOKEN, ConfigService],
+      inject: [DATABASE_WRITE_TOKEN, ConfigService, PortRegistry],
     },
 
     // SessionAuthGuard — registered as global APP_GUARD so every endpoint

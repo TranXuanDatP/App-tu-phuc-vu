@@ -3,9 +3,8 @@ import { CACHE_SERVICE_TOKEN } from '@core/constants/tokens';
 import type { ICacheService } from '@shared/caching/cache.interface';
 import { RedisCacheService } from '@shared/caching/redis-cache.service';
 import { SESSION_TTL_TOKEN } from '../../constants/tokens';
-import type { ISessionStore } from '../../domain/repositories/session-store.interface';
-import type { SessionEvent, SessionMetadata } from '../../application/dtos/session-event.dto';
-import type { ChannelType } from '../../domain/events/session-event.types';
+import type { ISessionStore } from '../session-store.interface';
+import type { SessionEvent, SessionMetadata, ChannelType } from '../../dto/session-event.dto';
 import { randomUUID } from 'crypto';
 
 /**

@@ -9,7 +9,7 @@ import { providerLinksTable } from '../persistence/drizzle/schema/provider-link.
 import { sessionsTable } from '../persistence/drizzle/schema/session.schema';
 import { verificationTable } from '../persistence/drizzle/schema/verification.schema';
 import { PiiEncryptionService } from '../persistence/encryption/pii-encryption.service';
-import { ZaloOaClient } from '../zalo/zalo-oa.client';
+import { PortRegistry } from '@shared/port';
 
 /**
  * Create and configure the better-auth instance.
@@ -46,16 +46,15 @@ function readPhone(user: Record<string, unknown>): string | undefined {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function createBetterAuth(db: unknown, configService: ConfigService): any {
+export function createBetterAuth(db: unknown, configService: ConfigService, portRegistry: PortRegistry): any {
   const logger = new Logger('BetterAuth');
 
   // Initialize PII encryption for database hooks
   const piiEncryption = new PiiEncryptionService(configService);
 
-  // Zalo OA client — delivers phone OTP via ZNS message (Pc, 2026-07-06).
-  // Falls back to dev logging when the OA is not configured.
-  const zaloOa = new ZaloOaClient(configService);
-
+  // OTP delivery is delegated to the notification port (lean BFF — auth doesn't
+  // send SMS directly). The ZaloOaClient (ZNS) will live in the notification live
+  // adapter when the downstream notification service is wired.
   // Only enable social providers when credentials are configured
   const socialProviders: Record<string, unknown> = {};
 
@@ -99,6 +98,15 @@ export function createBetterAuth(db: unknown, configService: ConfigService): any
   return betterAuth({
     baseURL,
     ...(trustedOrigins.length ? { trustedOrigins } : {}),
+    // Native-only client (Expo/RN). better-auth's origin/CSRF check rejects
+    // requests that carry a session cookie but no `Origin` header — and RN fetch
+    // never sends one (Origin is a browser concept). That blocks authenticated
+    // /api/auth/* calls with "MISSING_OR_NULL_ORIGIN" whenever the persisted
+    // session cookie is attached. CSRF-via-Origin protects BROWSER cookie auth
+    // from cross-site forgery, which doesn't apply to a native app, so disabling
+    // it is safe here. If a browser FE is ever added, remove this and rely on
+    // trustedOrigins instead.
+    advanced: { disableCSRFCheck: true },
     database: drizzleAdapter(db as Parameters<typeof drizzleAdapter>[0], {
       provider: 'pg',
       schema: {
@@ -196,16 +204,15 @@ export function createBetterAuth(db: unknown, configService: ConfigService): any
       // Phone/OTP Authentication
       phoneNumber({
         sendOTP: async ({ phoneNumber: phone, code }) => {
-          // Pc (2026-07-06): deliver the OTP via a Zalo OA ZNS message.
-          // The client falls back to dev logging when the OA is unconfigured,
-          // so registration works in dev without a live OA.
-          try {
-            await zaloOa.sendOtp(phone, code);
-          } catch (err) {
-            logger.warn(
-              `Zalo OA OTP delivery failed, falling back to dev log: ${(err as Error).message}`,
-            );
+          // Dev log so QA/dev can read the OTP from the backend log.
+          if (process.env.NODE_ENV !== 'production') {
             logger.log(`[DEV] OTP for ${phone.slice(-4).padStart(phone.length, '*')}: ${code}`);
+          }
+          // Delegate delivery to the notification port (lean BFF — auth doesn't send SMS).
+          try {
+            await portRegistry.execute('notification', 'send-otp', { phoneNumber: phone, code });
+          } catch (err) {
+            logger.warn(`OTP delivery via notification failed: ${(err as Error).message}`);
           }
         },
         signUpOnVerification: {

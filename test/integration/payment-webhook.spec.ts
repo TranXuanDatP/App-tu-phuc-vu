@@ -1,33 +1,24 @@
 /**
  * Integration Test — Payment Webhook
  *
- * Full flow: CommandBus → HandlePaymentWebhookHandler → IdempotencyService → CacheService
- * Tests: success flow (cache invalidation), duplicate webhook.
+ * Full flow: PaymentService.handleWebhook → IdempotencyService (backed by
+ * in-memory cache) → CacheService.deleteByPattern + notification dispatch via
+ * PortRegistry ('notification' / 'dispatch-notification').
  *
- * AC: #2 (cache invalidation), #4 (idempotency), #5 (notification dispatch — Story 6.2)
- *
- * NOTE: IdempotencyService uses an in-memory Map store here because the mock
- * cache service's get/set use a plain Map (not the `idempotency:` key prefix).
- * Duplicate detection works via the shared IdempotencyService instance's
- * internal memoryStore — sufficient for integration testing.
- *
- * Story 6.2 update: HandlePaymentWebhookHandler now dispatches DispatchNotificationCommand.
- * We register a mock handler that captures the command for assertion.
+ * AC: #2 (cache invalidation), #4 (idempotency), #5 (notification dispatch)
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { CqrsModule, CommandBus, ICommandHandler, CommandHandler } from '@nestjs/cqrs';
 import { CACHE_SERVICE_TOKEN } from '../../src/libs/core/constants/tokens';
-import { IdempotencyService } from '../../src/libs/shared/cqrs/idempotency/idempotency.service';
-import { HandlePaymentWebhookHandler } from '../../src/modules/payment/application/commands/handlers/handle-payment-webhook.handler';
-import { HandlePaymentWebhookCommand } from '../../src/modules/payment/application/commands/handle-payment-webhook.command';
-import { DispatchNotificationCommand } from '../../src/modules/communication/application/commands/dispatch-notification.command';
+import { PortRegistry } from '../../src/libs/shared/port';
+import { IdempotencyService } from '../../src/libs/shared/idempotency/idempotency.service';
+import { PaymentService } from '../../src/modules/payment/payment.service';
 
 // Working mock cache — stores values in-memory so idempotency can retrieve them
 const cacheStore = new Map<string, any>();
 const mockCacheService = {
   get: jest.fn((key: string) => Promise.resolve(cacheStore.get(key) ?? null)),
-  set: jest.fn((key: string, value: any, ttl?: number) => { cacheStore.set(key, value); return Promise.resolve(undefined); }),
+  set: jest.fn((key: string, value: any) => { cacheStore.set(key, value); return Promise.resolve(undefined); }),
   delete: jest.fn((key: string) => { cacheStore.delete(key); return Promise.resolve(undefined); }),
   exists: jest.fn().mockResolvedValue(false),
   clear: jest.fn(() => { cacheStore.clear(); return Promise.resolve(undefined); }),
@@ -40,37 +31,33 @@ const mockCacheService = {
   deleteByPattern: jest.fn().mockResolvedValue(2),
 };
 
-// Mock DispatchNotificationHandler — captures dispatched commands
-let lastDispatchedNotification: DispatchNotificationCommand | null = null;
-
-@CommandHandler(DispatchNotificationCommand)
-class MockDispatchNotificationHandler implements ICommandHandler<DispatchNotificationCommand> {
-  async execute(command: DispatchNotificationCommand) {
-    lastDispatchedNotification = command;
-    return { dispatched: true, channel: 'zns', rateLimited: false };
-  }
-}
+// Capture dispatch-notification calls (notification port)
+const dispatchCalls: any[] = [];
+const mockPortRegistry = {
+  execute: jest.fn((port: string, method: string, params: any) => {
+    if (port === 'notification' && method === 'dispatch-notification') {
+      dispatchCalls.push(params);
+    }
+    return Promise.resolve({ data: { dispatched: true } });
+  }),
+};
 
 describe('Payment Webhook Integration', () => {
   let module: TestingModule;
-  let commandBus: CommandBus;
+  let paymentService: PaymentService;
 
   beforeAll(async () => {
     module = await Test.createTestingModule({
-      imports: [CqrsModule],
       providers: [
-        HandlePaymentWebhookHandler,
-        MockDispatchNotificationHandler,
+        PaymentService,
         IdempotencyService,
-        {
-          provide: CACHE_SERVICE_TOKEN,
-          useValue: mockCacheService,
-        },
+        { provide: CACHE_SERVICE_TOKEN, useValue: mockCacheService },
+        { provide: PortRegistry, useValue: mockPortRegistry },
       ],
     }).compile();
 
     await module.init();
-    commandBus = module.get(CommandBus);
+    paymentService = module.get(PaymentService);
   });
 
   afterAll(async () => {
@@ -79,30 +66,28 @@ describe('Payment Webhook Integration', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
-    lastDispatchedNotification = null;
+    dispatchCalls.length = 0;
   });
 
   it('should process successful payment webhook end-to-end', async () => {
-    const result = await commandBus.execute(
-      new HandlePaymentWebhookCommand({
-        paymentId: 'PAY-INT-001',
-        invoiceId: 'INV-INT-001',
-        customerId: 'USR-INT-001',
-        amount: 150000,
-        status: 'success',
-        timestamp: '2026-06-09T10:00:00Z',
-      }),
-    );
+    const result = await paymentService.handleWebhook({
+      paymentId: 'PAY-INT-001',
+      invoiceId: 'INV-INT-001',
+      customerId: 'USR-INT-001',
+      amount: 150000,
+      status: 'success',
+      timestamp: '2026-06-09T10:00:00Z',
+    });
 
     expect(result.processed).toBe(true);
     expect(result.status).toBe('success');
     expect(mockCacheService.deleteByPattern).toHaveBeenCalledWith('cache:v2:port:invoice:*');
 
-    // Story 6.2: Verify notification dispatched
-    expect(lastDispatchedNotification).not.toBeNull();
-    expect(lastDispatchedNotification!.payload.type).toBe('payment_completed');
-    expect(lastDispatchedNotification!.payload.isCritical).toBe(true);
-    expect(lastDispatchedNotification!.payload.customerId).toBe('USR-INT-001');
+    // Notification dispatched via port
+    expect(dispatchCalls).toHaveLength(1);
+    expect(dispatchCalls[0].type).toBe('payment_completed');
+    expect(dispatchCalls[0].isCritical).toBe(true);
+    expect(dispatchCalls[0].customerId).toBe('USR-INT-001');
   });
 
   it('should handle duplicate webhook via idempotency', async () => {
@@ -115,12 +100,10 @@ describe('Payment Webhook Integration', () => {
       timestamp: '2026-06-09T10:00:00Z',
     };
 
-    // First call — processed
-    const first = await commandBus.execute(new HandlePaymentWebhookCommand(payload));
+    const first = await paymentService.handleWebhook(payload);
     expect(first.processed).toBe(true);
 
-    // Second call — duplicate
-    const second = await commandBus.execute(new HandlePaymentWebhookCommand(payload));
+    const second = await paymentService.handleWebhook(payload);
     expect(second.processed).toBe(false);
     expect(second.status).toBe('duplicate');
   });

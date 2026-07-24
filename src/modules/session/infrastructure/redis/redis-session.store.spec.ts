@@ -2,14 +2,8 @@ import { RedisSessionStore } from './redis-session.store';
 import { SESSION_TTL_TOKEN } from '../../constants/tokens';
 import { CACHE_SERVICE_TOKEN } from '@core/constants/tokens';
 
-// Mock fs to avoid needing actual Lua file on disk during test
-jest.mock('fs', () => ({
-  readFileSync: jest.fn().mockReturnValue('-- mock lua script'),
-}));
-
-jest.mock('path', () => ({
-  join: jest.fn().mockReturnValue('session-append.lua'),
-}));
+// The store inlines its Lua append script (no fs read at runtime), so the spec
+// asserts on a stable substring of that inlined script rather than a mock value.
 
 // Mock crypto for randomUUID (sessionId generation in appendEvent)
 jest.mock('crypto', () => ({
@@ -64,10 +58,10 @@ describe('RedisSessionStore', () => {
   // ── onModuleInit ──────────────────────────────────────────────────────────────
 
   describe('onModuleInit', () => {
-    it('should load Lua script and store SHA', async () => {
+    it('should load the inlined Lua script and store SHA', async () => {
       await store.onModuleInit();
 
-      expect(mockClient.scriptLoad).toHaveBeenCalledWith('-- mock lua script');
+      expect(mockClient.scriptLoad).toHaveBeenCalledWith(expect.stringContaining('redis.call'));
     });
   });
 
@@ -117,13 +111,13 @@ describe('RedisSessionStore', () => {
       ).rejects.toThrow('Session Lua script not loaded');
     });
 
-    it('should fall back to EVAL on NOSCRIPT error', async () => {
+    it('should fall back to EVAL with the inlined script on NOSCRIPT error', async () => {
       mockClient.evalSha.mockRejectedValueOnce(new Error('NOSCRIPT No matching script'));
 
       await store.appendEvent('USR-12345', mockEvent);
 
       expect(mockClient.eval).toHaveBeenCalledWith(
-        '-- mock lua script',
+        expect.stringContaining('redis.call'),
         {
           keys: ['session:USR-12345', 'session:USR-12345:events'],
           arguments: [

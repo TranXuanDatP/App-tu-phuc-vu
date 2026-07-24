@@ -44,7 +44,8 @@ export interface ReplayJobPayload {
 /** Replay strategy registered by PortRegistry (avoids circular DI). */
 export type ReplayExecutor = (payload: ReplayJobPayload) => Promise<unknown>;
 
-const QUEUE_NAME = 'cskh:port-replay';
+// BullMQ forbids ':' in queue names (it's the Redis key separator), so use '-'.
+const QUEUE_NAME = 'cskh-port-replay';
 
 @Injectable()
 export class QueueService implements OnModuleInit, OnModuleDestroy {

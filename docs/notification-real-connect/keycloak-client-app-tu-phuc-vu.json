@@ -1,0 +1,11 @@
+{
+  "_comment": "Clone of admin-portal-bff SA client (platform-core/deploy/core/keycloak/water-platform-realm.json:293-304). Merge this client into the water-platform realm (Keycloak admin UI → Clients → Import, or add to the realm JSON). gRPC Send needs NO role/audience (notification-be-rs validates issuer+RS256 only). For Phase-2 inbox HTTP (GET /inbox admin route), map the 'platform-admin' realm role onto this client's service-account user.",
+  "clientId": "app-tu-phuc-vu",
+  "enabled": true,
+  "publicClient": false,
+  "serviceAccountsEnabled": true,
+  "standardFlowEnabled": false,
+  "directAccessGrantsEnabled": false,
+  "secret": "${APP_TU_PHUC_VU_BFF_SECRET}",
+  "attributes": { "use.refresh.tokens": "false" }
+}

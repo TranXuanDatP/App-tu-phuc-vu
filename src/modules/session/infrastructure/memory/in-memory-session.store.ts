@@ -8,8 +8,8 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import type { ISessionStore } from '../../domain/repositories/session-store.interface';
-import type { SessionEvent, SessionMetadata } from '../../application/dtos/session-event.dto';
+import type { ISessionStore } from '../session-store.interface';
+import type { SessionEvent, SessionMetadata } from '../../dto/session-event.dto';
 
 interface SessionData {
   metadata: SessionMetadata;

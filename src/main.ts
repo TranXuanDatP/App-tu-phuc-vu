@@ -19,6 +19,7 @@ import {
   GlobalValidationPipe,
 } from 'src/libs/shared/http';
 import fastifyRawBody from 'fastify-raw-body';
+import fastifyCors from '@fastify/cors';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -40,6 +41,11 @@ async function bootstrap() {
     global: true,
     encoding: 'utf8',
   });
+
+  // CORS — the Expo/mobile client calls cross-origin (no same-origin proxy like the
+  // Next.js FE had). Dev config reflects any origin; lock `origin` down for production.
+  // (Pc, 2026-07-14 — app-tu-phuc-vu-mobile migration slice)
+  await app.register(fastifyCors, { origin: true, credentials: true });
 
   // Enable graceful shutdown hooks
   app.enableShutdownHooks();

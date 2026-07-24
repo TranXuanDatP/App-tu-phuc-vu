@@ -22,7 +22,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:integration": "jest src/modules/product/tests/product.integration.spec.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "node scripts/migrate.js",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

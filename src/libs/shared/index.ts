@@ -6,6 +6,7 @@ export * from './database';
 
 // CQRS (Command/Query/Event Buses)
 export * from './cqrs';
+export * from './idempotency';
 
 // HTTP (Filters, Interceptors, Pipes, DTOs)
 export * from './http';
