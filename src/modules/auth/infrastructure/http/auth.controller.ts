@@ -218,8 +218,9 @@ export class AuthController {
    * POST /auth/register
    * Register a NEW customer via the app — creates a Customer 360 record (mock-first
    * via the customer-profile port's `create-customer` method) and links it to the
-   * auth user. Collects full info (Họ tên, CCCD, phân loại, địa chỉ cấu trúc).
-   * CCCD encrypted (AES-256-GCM) + HMAC blind index. Sets profile_status='complete'.
+   * auth user. Collects Họ tên, phân loại, địa chỉ cấu trúc (+ optional email).
+   * Dedup by phone — refuses if the phone already has a Customer 360 record.
+   * Sets profile_status='complete'.
    *
    * Replaces the former complete-profile endpoint (which only wrote local identity
    * without creating a downstream customer). For users who already have a mã KH,
@@ -230,7 +231,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Register a new customer (app signup → Customer 360)' })
   @ApiBody({ type: SwaggerRegisterDto })
   @ApiResponse({ status: 200, description: 'Customer created + profile completed' })
-  @ApiResponse({ status: 400, description: 'Validation error' })
+  @ApiResponse({ status: 400, description: 'Validation error / phone already registered' })
   @ApiResponse({ status: 401, description: 'Authentication required' })
   async register(
     @CurrentUser('id') userId: string,
@@ -245,11 +246,24 @@ export class AuthController {
     // Attach the user's verified phone (plaintext per phoneNumber plugin) so
     // find-by-phone resolves them after registration.
     const userRows = await this.db
-      .select({ phoneNumber: usersTable.phoneNumber })
+      .select({
+        phoneNumber: usersTable.phoneNumber,
+        profileStatus: usersTable.profileStatus,
+      })
       .from(usersTable)
       .where(eq(usersTable.id, userId))
       .limit(1);
     const phone = userRows[0]?.phoneNumber ?? null;
+
+    // Dedup by phone: better-auth enforces 1 phone = 1 user, so "this phone is
+    // already registered" = this user is already `complete`. Direct DB check — the
+    // customer-profile port is cached (static tier), so a find-by-phone here would
+    // return a stale null right after a prior create-customer and miss the duplicate.
+    if (userRows[0]?.profileStatus === 'complete') {
+      throw new ValidationException(
+        'Số điện thoại đã đăng ký hồ sơ. Vui lòng đăng nhập để tiếp tục.',
+      );
+    }
 
     // Create the Customer 360 record (mock-first; swap to a live adapter later).
     const created = await this.portRegistry.execute<CustomerProfileResponse>(
