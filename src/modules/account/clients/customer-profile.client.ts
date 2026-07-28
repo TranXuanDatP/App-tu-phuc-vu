@@ -27,12 +27,12 @@ import type { CustomerProfileResponse } from '../dto/customer-profile.dto';
 // adapter instances within a process.
 let appCustomerCounter = 0;
 
-// Normalized phone of the ONE pre-seeded "existing customer" (the find-by-phone
-// fixture, customerId QN-0912345). Login with this phone → recognized as an
-// existing customer (dashboard full); any other phone → no match → the app
-// shows the "Bạn chưa đăng ký tài khoản" screen. App-registered customers (via
-// create-customer) also match through phoneIndex.
-const EXISTING_CUSTOMER_PHONE = '987654321';
+// Normalized phones of pre-seeded "existing customers" (the find-by-phone
+// fixture, customerId QN-0912345). Login with any of these → recognized as an
+// existing customer (dashboard full with mock data); any other phone → no match
+// → the app shows the "Bạn chưa đăng ký tài khoản" screen. App-registered
+// customers (via create-customer) also match through phoneIndex.
+const EXISTING_CUSTOMER_PHONES = new Set(['987654321', '901234567']);
 
 @Injectable()
 export class MockCustomerProfileAdapter extends MockAdapterBase {
@@ -80,7 +80,7 @@ export class MockCustomerProfileAdapter extends MockAdapterBase {
         // One pre-seeded "existing customer" (the fixture) so the matched /
         // existing-customer login branch is testable. Any OTHER phone → no
         // match → "Bạn chưa đăng ký tài khoản".
-        if (norm === EXISTING_CUSTOMER_PHONE) return super.execute(method, params);
+        if (EXISTING_CUSTOMER_PHONES.has(norm)) return super.execute(method, params);
       }
       return null;
     }

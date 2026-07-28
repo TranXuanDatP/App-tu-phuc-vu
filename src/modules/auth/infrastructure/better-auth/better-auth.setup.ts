@@ -204,9 +204,14 @@ export function createBetterAuth(db: unknown, configService: ConfigService, port
       // Phone/OTP Authentication
       phoneNumber({
         sendOTP: async ({ phoneNumber: phone, code }) => {
-          // Dev log so QA/dev can read the OTP from the backend log.
+          // Dev log so QA/dev can read the OTP from the backend log. Use console.log
+          // (not the pino logger) so the line flushes to the terminal immediately —
+          // pino's sonic-boom buffers ~16KB, which hides a single OTP line during
+          // `npm run start:dev` (piped stdout). console.log flushes on the newline.
           if (process.env.NODE_ENV !== 'production') {
-            logger.log(`[DEV] OTP for ${phone.slice(-4).padStart(phone.length, '*')}: ${code}`);
+            console.log(
+              `[BetterAuth] [DEV] OTP for ${phone.slice(-4).padStart(phone.length, '*')}: ${code}`,
+            );
           }
           // Delegate delivery to the notification port (lean BFF — auth doesn't send SMS).
           try {
