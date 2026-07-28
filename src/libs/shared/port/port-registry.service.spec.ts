@@ -20,6 +20,7 @@ const mockCacheService = {
   get: jest.fn().mockResolvedValue(null),
   set: jest.fn().mockResolvedValue(undefined),
   delete: jest.fn().mockResolvedValue(undefined),
+  deleteByPattern: jest.fn().mockResolvedValue(0),
   exists: jest.fn().mockResolvedValue(false),
   clear: jest.fn().mockResolvedValue(undefined),
   mget: jest.fn().mockResolvedValue([]),
@@ -272,6 +273,48 @@ describe('PortRegistry', () => {
       await registry.execute('payment-port', 'initiate');
 
       expect(mockCacheService.set).not.toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // execute — mutation cache bypass + invalidation (write-through correctness)
+  // =========================================================================
+  describe('execute — mutation cache bypass + invalidation', () => {
+    const registerStaticPort = () => {
+      const adapter = createMockAdapter({ ok: true });
+      registry.register('customer-profile', adapter, adapter, {
+        cacheTier: 'static',
+        cacheTtl: 43200,
+        timeout: 3000,
+      } as any);
+      return adapter;
+    };
+
+    it('should NOT cache a mutation method (create/update/send/... bypass cache)', async () => {
+      registerStaticPort();
+      await registry.execute('customer-profile', 'create-customer', {
+        fullName: 'A',
+      });
+      expect(mockCacheService.set).not.toHaveBeenCalled();
+    });
+
+    it('should invalidate the port read cache after a mutation (read-after-write freshness)', async () => {
+      registerStaticPort();
+      await registry.execute('customer-profile', 'create-customer', {
+        fullName: 'A',
+      });
+      expect(mockCacheService.deleteByPattern).toHaveBeenCalledWith(
+        'cache:v2:port:customer-profile:*',
+      );
+    });
+
+    it('should still cache a read method and not invalidate', async () => {
+      registerStaticPort();
+      await registry.execute('customer-profile', 'get-profile', {
+        customerId: 'X',
+      });
+      expect(mockCacheService.set).toHaveBeenCalled();
+      expect(mockCacheService.deleteByPattern).not.toHaveBeenCalled();
     });
   });
 

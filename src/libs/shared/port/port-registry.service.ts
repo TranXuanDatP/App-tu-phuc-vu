@@ -243,8 +243,15 @@ export class PortRegistry implements OnModuleInit {
       }
     }
 
-    // Fix #5: Compute cache key ONCE and reuse for both get and set
-    const shouldCache = entry.config.cacheTier !== 'transaction' && entry.config.cacheTtl > 0;
+    // Cache READS only. A mutation method (create/update/send/link/...) must
+    // always hit the downstream — a cached write result is stale and a correctness
+    // bug (e.g. create-customer returning the pre-create state, or find-by-phone
+    // after a create returning a cached null). Default-secure: only explicitly
+    // read-like method names are cacheable; everything else bypasses the cache.
+    const shouldCache =
+      !this.isMutationMethod(method) &&
+      entry.config.cacheTier !== 'transaction' &&
+      entry.config.cacheTtl > 0;
     let cacheKey: string | undefined;
 
     if (shouldCache) {
@@ -328,6 +335,29 @@ export class PortRegistry implements OnModuleInit {
     // These are intentionally outside the adapter try/catch so that
     // cache/Redis failures do NOT trip the circuit breaker.
     const cachedAt = new Date().toISOString();
+
+    // Write-through invalidation: a mutation busts the port's read cache so the
+    // next read fetches fresh data (e.g. find-by-phone right after create-customer
+    // must not return a stale cached null). Fire-and-forget — never trips the CB.
+    // Defensive (Promise.resolve + try/catch): some cache impls / test mocks may
+    // not return a thenable from deleteByPattern.
+    if (this.isMutationMethod(method)) {
+      try {
+        Promise.resolve(
+          this.cacheService.deleteByPattern(
+            `cache:${CACHE_KEY_VERSION}:port:${portName}:*`,
+          ),
+        ).catch((e) =>
+          this.logger.warn(
+            `Cache invalidation failed for ${portName}: ${(e as Error).message}`,
+          ),
+        );
+      } catch (e) {
+        this.logger.warn(
+          `Cache invalidation failed for ${portName}: ${(e as Error).message}`,
+        );
+      }
+    }
 
     // Cache result with insertion timestamp (Fix #4)
     if (shouldCache && cacheKey) {
@@ -558,6 +588,19 @@ export class PortRegistry implements OnModuleInit {
     // Refresh the fallback cache so future requests can serve it directly
     this.fallbackProvider.setCached(payload.portName, data);
     return data;
+  }
+
+  /**
+   * Convention: mutation methods bypass the cache (a cached write result is stale
+   * → correctness bug, e.g. create-customer returning pre-create state, or
+   * find-by-phone after a create returning a cached null). Everything else
+   * (get/find/search/list/call/...) is cacheable per the port's tier. Add a verb
+   * here when a new write method name is introduced.
+   */
+  private isMutationMethod(method: string): boolean {
+    return /^(create|update|delete|remove|add|insert|save|send|submit|dispatch|pay|setup|initiate|retry|cancel|confirm|generate|register|verify|login|logout|refresh|link|unlink|close|archive|assign|sign|post|put)/.test(
+      method,
+    );
   }
 
   /**
