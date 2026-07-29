@@ -107,6 +107,16 @@ export function createBetterAuth(db: unknown, configService: ConfigService, port
     // it is safe here. If a browser FE is ever added, remove this and rely on
     // trustedOrigins instead.
     advanced: { disableCSRFCheck: true },
+    // Rate limit: demo is public — without this, anyone can spam send-otp.
+    // 10 requests / 60s / IP across all better-auth endpoints (send-otp, verify,
+    // sign-out, etc.). Memory storage (sufficient for single-instance demo).
+    // Prod: tighten to ~3 OTP/hour + use database/Redis storage for multi-instance.
+    rateLimit: {
+      enabled: true,
+      window: 60,
+      max: 10,
+      storage: 'memory',
+    },
     database: drizzleAdapter(db as Parameters<typeof drizzleAdapter>[0], {
       provider: 'pg',
       schema: {
