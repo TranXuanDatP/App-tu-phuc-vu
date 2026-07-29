@@ -156,7 +156,9 @@ export const IncidentReportListResponseSchema = z.object({
 export type IncidentReportListResponse = z.infer<typeof IncidentReportListResponseSchema>;
 
 export const CreateReportRequestSchema = z.object({
-  type: IncidentTypeSchema,
+  // Wire-service: accept any type string from the customer app (low_pressure,
+  // meter_issue, etc.) — the downstream incident-service normalises/triages.
+  type: z.string().min(1),
   description: z.string(),
   photoUrls: z.array(z.string()).optional(),
   location: IncidentLocationSchema,
