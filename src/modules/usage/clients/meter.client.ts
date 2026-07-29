@@ -27,4 +27,16 @@ export class MockMeterAdapter extends MockAdapterBase {
       new Logger('meter-mock-adapter'),
     );
   }
+
+  override async execute(method: string, params: Record<string, unknown>): Promise<unknown> {
+    // Inject the requested meterId into calibration/history so different meters
+    // show different-ID data (was returning the same fixture for all meterIds).
+    if (params.meterId && (method === 'get-calibration-status' || method === 'get-meter-history')) {
+      const data = await super.execute(method, params);
+      if (data && typeof data === 'object') {
+        return { ...(data as object), meterId: params.meterId };
+      }
+    }
+    return super.execute(method, params);
+  }
 }

@@ -17,6 +17,8 @@ import {
 
 @Injectable()
 export class MockPaymentAdapter extends MockAdapterBase {
+  private static paymentCounter = 0;
+
   constructor() {
     super(
       'payment',
@@ -28,5 +30,22 @@ export class MockPaymentAdapter extends MockAdapterBase {
       },
       new Logger('payment-mock-adapter'),
     );
+  }
+
+  override async execute(method: string, params: Record<string, unknown>): Promise<unknown> {
+    // Generate a unique paymentId per create request (was always PAY-2026-001).
+    if (method === 'create-payment') {
+      const data = await super.execute(method, params);
+      if (data && typeof data === 'object') {
+        MockPaymentAdapter.paymentCounter += 1;
+        const seq = String(MockPaymentAdapter.paymentCounter).padStart(3, '0');
+        return {
+          ...(data as object),
+          paymentId: `PAY-2026-${seq}`,
+          invoiceId: params.invoiceId ?? (data as { invoiceId?: string }).invoiceId,
+        };
+      }
+    }
+    return super.execute(method, params);
   }
 }

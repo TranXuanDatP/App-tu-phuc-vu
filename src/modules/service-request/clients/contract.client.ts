@@ -29,4 +29,21 @@ export class MockContractAdapter extends MockAdapterBase {
       new Logger('contract-mock-adapter'),
     );
   }
+
+  override async execute(method: string, params: Record<string, unknown>): Promise<unknown> {
+    // Inject the requested contractId into detail/versions/pdf so different
+    // contracts show different-ID data (was returning the same fixture for all).
+    if (
+      params.contractId &&
+      (method === 'get-contract-detail' ||
+        method === 'get-contract-versions' ||
+        method === 'get-contract-pdf')
+    ) {
+      const data = await super.execute(method, params);
+      if (data && typeof data === 'object') {
+        return { ...(data as object), contractId: params.contractId };
+      }
+    }
+    return super.execute(method, params);
+  }
 }
