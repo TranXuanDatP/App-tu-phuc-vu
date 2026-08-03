@@ -125,6 +125,43 @@ describe('Auth Contract Tests', () => {
       });
     });
 
+    // W0: N-match must DENY — pick-first is a data-leak risk
+    it('should return {registered:false} when CUSTOMER_SERVICE_URL set and phone matches N customers', async () => {
+      // CUSTOMER_SERVICE_URL set → uses resolveFromCustomerService (fetch), not mock
+      controller = new AuthController({} as any, mockPortRegistry as any, createMockDb({ phoneNumber: '+84900000000' }) as any, { get: (k: string) => k === 'CUSTOMER_SERVICE_URL' ? 'http://mock-cs' : undefined } as any);
+
+      // Mock global fetch to return array of 2 customers
+      const originalFetch = global.fetch;
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ data: [MOCK_CUSTOMER, { ...MOCK_CUSTOMER, customerId: 'CUST-2' }] }),
+      }) as any;
+
+      const result = await controller.checkRegistration('user-1');
+
+      global.fetch = originalFetch;
+      expect(result.registered).toBe(false);
+    });
+
+    // W0: response must NOT leak PII — only registered/profileStatus/customerId
+    it('should not leak PII in check-registration response (only registered + profileStatus + customerId)', async () => {
+      mockDb = createMockDb({ phoneNumber: '+84901234567' });
+      mockPortRegistry.execute.mockResolvedValue({
+        data: { ...MOCK_CUSTOMER, customerId: 'QN-0912345' },
+      });
+
+      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
+
+      const result = await controller.checkRegistration('user-1') as Record<string, unknown>;
+
+      // Must NOT contain any customer profile fields beyond customerId
+      expect(Object.keys(result).sort()).toEqual(['customerId', 'profileStatus', 'registered']);
+      expect(result).not.toHaveProperty('fullName');
+      expect(result).not.toHaveProperty('address');
+      expect(result).not.toHaveProperty('contactInfo');
+      expect(result).not.toHaveProperty('classification');
+    });
+
     it('should return {registered:false} when user has no phone', async () => {
       mockDb = createMockDb(null);
 

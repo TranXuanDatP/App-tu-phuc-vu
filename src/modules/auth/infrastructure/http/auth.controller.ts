@@ -368,8 +368,9 @@ export class AuthController {
 
   /**
    * Resolve phone → customer via the real customer service (CUSTOMER_SERVICE_URL).
-   * Handles 0/1/N matches: 0 → null, 1 → link, N → return first + log warning
-   * (disambiguation deferred — pick contract/address when multi-meter support lands).
+   * W0 safe-default: 0 match → null, 1 match → return, N match → DENY (null).
+   * Pick-first on N match is a data-leak risk (one phone → multiple contracts,
+   * household multi-meter). Disambiguation deferred to W1 binding challenge.
    */
   private async resolveFromCustomerService(
     phone: string,
@@ -391,13 +392,15 @@ export class AuthController {
       const data = json?.data;
       if (!data) return null;
 
-      // Handle N matches: array → pick first + warn. Single match → use directly.
+      // W0: N-match → DENY (null). Pick-first is a data-leak risk (household
+      // multi-meter). Disambiguation deferred to W1 binding challenge.
       if (Array.isArray(data)) {
         if (data.length === 0) return null;
         if (data.length > 1) {
           this.logger.warn(
-            `phone ${phone.slice(-4)} resolved to ${data.length} customers — using first (${data[0].customerId}). Disambiguation deferred.`,
+            `phone ${phone.slice(-4)} resolved to ${data.length} customers — DENYING (multi-match). Disambiguation required.`,
           );
+          return null;
         }
         return data[0];
       }
