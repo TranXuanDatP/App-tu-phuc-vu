@@ -8,6 +8,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   ApiTags,
   ApiOperation,
@@ -62,12 +63,19 @@ import type {
 @Controller('auth')
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);
+  private readonly customerServiceUrl?: string;
 
   constructor(
     private readonly portHttpClient: PortHttpClient,
     private readonly portRegistry: PortRegistry,
     @Inject(DATABASE_WRITE_TOKEN) private readonly db: DrizzleDB,
-  ) {}
+    private readonly config: ConfigService,
+  ) {
+    // Gate: when CUSTOMER_SERVICE_URL is set, check-registration calls the real
+    // customer service to resolve phone → customerId. When unset → mock (current
+    // seed phones + app-registered). Mock stays the source of truth for dev/test.
+    this.customerServiceUrl = this.config.get<string>('CUSTOMER_SERVICE_URL') || undefined;
+  }
 
   /**
    * POST /auth/provider/callback
@@ -326,40 +334,103 @@ export class AuthController {
       .limit(1);
     const phone = userRows[0]?.phoneNumber ?? null;
 
-    if (phone) {
-      try {
-        const result = await this.portRegistry.execute<CustomerProfileResponse>(
-          'customer-profile',
-          'find-by-phone',
-          { phone },
-        );
-        const customer = result?.data;
-        if (customer) {
-          await this.db
-            .update(usersTable)
-            .set({
-              customerId: customer.customerId,
-              profileStatus: 'complete',
-              updatedAt: new Date(),
-            })
-            .where(eq(usersTable.id, userId));
-          this.logger.log(
-            `check-registration: matched ${customer.customerId} for user ${userId}`,
-          );
-          return {
-            registered: true,
-            profileStatus: 'complete' as const,
-            customerId: customer.customerId,
-          };
-        }
-      } catch (err) {
-        this.logger.warn(
-          `check-registration find-by-phone failed: ${(err as Error).message}`,
-        );
-      }
+    if (!phone) {
+      return { registered: false, profileStatus: 'incomplete' as const };
+    }
+
+    // Wire: when CUSTOMER_SERVICE_URL is set, resolve phone against the REAL
+    // customer service. When unset → mock (seed phones + app-registered via PortRegistry).
+    const customer = this.customerServiceUrl
+      ? await this.resolveFromCustomerService(phone)
+      : await this.resolveFromMock(phone);
+
+    if (customer) {
+      await this.db
+        .update(usersTable)
+        .set({
+          customerId: customer.customerId,
+          profileStatus: 'complete',
+          updatedAt: new Date(),
+        })
+        .where(eq(usersTable.id, userId));
+      this.logger.log(
+        `check-registration: matched ${customer.customerId} for user ${userId}`,
+      );
+      return {
+        registered: true,
+        profileStatus: 'complete' as const,
+        customerId: customer.customerId,
+      };
     }
 
     return { registered: false, profileStatus: 'incomplete' as const };
+  }
+
+  /**
+   * Resolve phone → customer via the real customer service (CUSTOMER_SERVICE_URL).
+   * Handles 0/1/N matches: 0 → null, 1 → link, N → return first + log warning
+   * (disambiguation deferred — pick contract/address when multi-meter support lands).
+   */
+  private async resolveFromCustomerService(
+    phone: string,
+  ): Promise<CustomerProfileResponse | null> {
+    try {
+      const res = await fetch(
+        `${this.customerServiceUrl}/api/v1/customers/resolve?phone=${encodeURIComponent(phone)}`,
+        { signal: AbortSignal.timeout(5000) },
+      );
+      if (!res.ok) {
+        this.logger.warn(
+          `customer-service resolve returned ${res.status} for phone ${phone.slice(-4)}`,
+        );
+        return null;
+      }
+      const json = (await res.json()) as {
+        data?: CustomerProfileResponse | CustomerProfileResponse[];
+      };
+      const data = json?.data;
+      if (!data) return null;
+
+      // Handle N matches: array → pick first + warn. Single match → use directly.
+      if (Array.isArray(data)) {
+        if (data.length === 0) return null;
+        if (data.length > 1) {
+          this.logger.warn(
+            `phone ${phone.slice(-4)} resolved to ${data.length} customers — using first (${data[0].customerId}). Disambiguation deferred.`,
+          );
+        }
+        return data[0];
+      }
+      return data;
+    } catch (err) {
+      this.logger.error(
+        `customer-service resolve failed for phone ${phone.slice(-4)}: ${(err as Error).message}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Resolve phone → customer via the mock adapter (PortRegistry). Used in dev/test
+   * when CUSTOMER_SERVICE_URL is unset. Seed phones (0901234567, 0987654321) +
+   * app-registered customers (via create-customer).
+   */
+  private async resolveFromMock(
+    phone: string,
+  ): Promise<CustomerProfileResponse | null> {
+    try {
+      const result = await this.portRegistry.execute<CustomerProfileResponse | null>(
+        'customer-profile',
+        'find-by-phone',
+        { phone },
+      );
+      return result?.data ?? null;
+    } catch (err) {
+      this.logger.warn(
+        `mock find-by-phone failed: ${(err as Error).message}`,
+      );
+      return null;
+    }
   }
 
   @Post('link-customer')

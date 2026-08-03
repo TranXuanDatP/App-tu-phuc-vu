@@ -59,7 +59,7 @@ describe('Auth Contract Tests', () => {
       mockDb = createMockDb({ phoneNumber: '+84901234567', profileStatus: 'incomplete' });
       mockPortRegistry.execute.mockResolvedValue({ data: MOCK_CUSTOMER });
 
-      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any);
+      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
 
       const result = await controller.register('user-1', VALID_REGISTER_BODY);
 
@@ -74,7 +74,7 @@ describe('Auth Contract Tests', () => {
     it('should throw ValidationException when user is already complete (dedup by phone)', async () => {
       mockDb = createMockDb({ phoneNumber: '+84901234567', profileStatus: 'complete' });
 
-      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any);
+      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
 
       await expect(controller.register('user-1', VALID_REGISTER_BODY)).rejects.toThrow(
         ValidationException,
@@ -83,7 +83,7 @@ describe('Auth Contract Tests', () => {
 
     it('should throw ValidationException on invalid body (missing required fields)', async () => {
       mockDb = createMockDb(null);
-      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any);
+      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
 
       await expect(controller.register('user-1', { fullName: 'X' })).rejects.toThrow(
         ValidationException,
@@ -100,7 +100,7 @@ describe('Auth Contract Tests', () => {
         data: { ...MOCK_CUSTOMER, customerId: 'QN-0912345' },
       });
 
-      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any);
+      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
 
       const result = await controller.checkRegistration('user-1');
 
@@ -115,7 +115,7 @@ describe('Auth Contract Tests', () => {
       mockDb = createMockDb({ phoneNumber: '+84900000000' });
       mockPortRegistry.execute.mockResolvedValue({ data: null });
 
-      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any);
+      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
 
       const result = await controller.checkRegistration('user-1');
 
@@ -128,7 +128,7 @@ describe('Auth Contract Tests', () => {
     it('should return {registered:false} when user has no phone', async () => {
       mockDb = createMockDb(null);
 
-      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any);
+      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
 
       const result = await controller.checkRegistration('user-1');
 
