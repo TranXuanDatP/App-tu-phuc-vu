@@ -6,7 +6,7 @@
  */
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { CurrentUser } from '@modules/auth/infrastructure/decorators/current-user.decorator';
+import { CustomerId } from '../binding/decorators/current-customer.decorator';
 import { RequiresBinding } from '../binding/decorators/requires-binding.decorator';
 import { BillingService } from './billing.service';
 
@@ -28,10 +28,10 @@ export class TariffController {
   @Get(':contractId')
   @ApiOperation({ summary: 'Get tariff plan for a contract' })
   getTariffPlan(
-    @CurrentUser('id') userId: string,
+    @CustomerId() customerId: string,
     @Param('contractId') contractId: string,
   ) {
-    return this.billingService.getTariffPlan(userId, contractId);
+    return this.billingService.getTariffPlan(customerId, contractId);
   }
 
   /**
@@ -41,11 +41,11 @@ export class TariffController {
   @Get(':contractId/breakdown')
   @ApiOperation({ summary: 'Get tariff breakdown for an invoice' })
   getTariffBreakdown(
-    @CurrentUser('id') userId: string,
+    @CustomerId() customerId: string,
     @Param('contractId') contractId: string,
     @Query('invoiceId') invoiceId: string,
   ) {
-    return this.billingService.getTariffBreakdown(userId, contractId, invoiceId);
+    return this.billingService.getTariffBreakdown(customerId, contractId, invoiceId);
   }
 
   /**
@@ -55,10 +55,10 @@ export class TariffController {
   @Get(':contractId/fees')
   @ApiOperation({ summary: 'Get applicable fees for a contract' })
   getApplicableFees(
-    @CurrentUser('id') userId: string,
+    @CustomerId() customerId: string,
     @Param('contractId') contractId: string,
   ) {
-    return this.billingService.getApplicableFees(userId, contractId);
+    return this.billingService.getApplicableFees(customerId, contractId);
   }
 }
 
@@ -80,10 +80,10 @@ export class InvoiceController {
   @Get()
   @ApiOperation({ summary: 'Get paginated invoice list' })
   getInvoiceList(
-    @CurrentUser('id') userId: string,
+    @CustomerId() customerId: string,
     @Query() query: Record<string, any>,
   ) {
-    return this.billingService.getInvoiceList(userId, query);
+    return this.billingService.getInvoiceList(customerId, query);
   }
 
   /**
@@ -93,10 +93,10 @@ export class InvoiceController {
   @Get(':invoiceId')
   @ApiOperation({ summary: 'Get invoice detail' })
   getInvoiceDetail(
-    @CurrentUser('id') userId: string,
+    @CustomerId() customerId: string,
     @Param('invoiceId') invoiceId: string,
   ) {
-    return this.billingService.getInvoiceDetail(userId, invoiceId);
+    return this.billingService.getInvoiceDetail(customerId, invoiceId);
   }
 
   /**
@@ -106,9 +106,9 @@ export class InvoiceController {
   @Get(':invoiceId/pdf')
   @ApiOperation({ summary: 'Get invoice PDF download URL' })
   getInvoicePdf(
-    @CurrentUser('id') userId: string,
+    @CustomerId() customerId: string,
     @Param('invoiceId') invoiceId: string,
   ) {
-    return this.billingService.getInvoicePdf(userId, invoiceId);
+    return this.billingService.getInvoicePdf(customerId, invoiceId);
   }
 }

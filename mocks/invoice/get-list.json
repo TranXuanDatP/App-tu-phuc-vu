@@ -7,7 +7,8 @@
       "totalAmount": 123273,
       "paymentStatus": "unpaid",
       "issueDate": "2026-06-01T00:00:00Z",
-      "dueDate": "2026-06-15T00:00:00Z"
+      "dueDate": "2026-06-15T00:00:00Z",
+      "ownerCustomerId": "QN-0912345"
     },
     {
       "invoiceId": "INV-2026-002",
@@ -16,7 +17,8 @@
       "totalAmount": 198000,
       "paymentStatus": "paid",
       "issueDate": "2026-05-01T00:00:00Z",
-      "dueDate": "2026-05-15T00:00:00Z"
+      "dueDate": "2026-05-15T00:00:00Z",
+      "ownerCustomerId": "QN-0912345"
     },
     {
       "invoiceId": "INV-2026-003",
@@ -25,10 +27,21 @@
       "totalAmount": 312000,
       "paymentStatus": "overdue",
       "issueDate": "2026-04-01T00:00:00Z",
-      "dueDate": "2026-04-15T00:00:00Z"
+      "dueDate": "2026-04-15T00:00:00Z",
+      "ownerCustomerId": "QN-0912345"
+    },
+    {
+      "invoiceId": "INV-2026-004",
+      "contractId": "CTR-2024-0002",
+      "period": "2026-05",
+      "totalAmount": 189000,
+      "paymentStatus": "unpaid",
+      "issueDate": "2026-06-01T00:00:00Z",
+      "dueDate": "2026-06-15T00:00:00Z",
+      "ownerCustomerId": "QN-0888891"
     }
   ],
-  "totalCount": 3,
+  "totalCount": 4,
   "page": 1,
   "limit": 10,
   "totalPages": 1

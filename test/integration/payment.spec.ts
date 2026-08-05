@@ -84,7 +84,9 @@ describe('Payment Integration', () => {
 
   describe('POST /payments — Service → PortRegistry → MockAdapter → JSON', () => {
     it('should verify unpaid invoice and create payment end-to-end', async () => {
-      const result = await paymentService.createPayment('USR-001', {
+      // QN-0912345 owns INV-2026-001 (mocks/invoice/get-list.json) — the bound customer
+      // paying their OWN invoice (A2 Layer-2 ownership).
+      const result = await paymentService.createPayment('QN-0912345', {
         invoiceId: 'INV-2026-001',
         method: 'qr_code',
       });
@@ -104,7 +106,9 @@ describe('Payment Integration', () => {
     });
 
     it('should return payment with valid response shape', async () => {
-      const result = await paymentService.createPayment('USR-001', {
+      // QN-0912345 owns INV-2026-001 (mocks/invoice/get-list.json) — the bound customer
+      // paying their OWN invoice (A2 Layer-2 ownership).
+      const result = await paymentService.createPayment('QN-0912345', {
         invoiceId: 'INV-2026-001',
         method: 'qr_code',
       });

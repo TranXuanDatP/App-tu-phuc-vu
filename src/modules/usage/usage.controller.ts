@@ -5,7 +5,7 @@
  */
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { CurrentUser } from '@modules/auth/infrastructure/decorators/current-user.decorator';
+import { CustomerId } from '../binding/decorators/current-customer.decorator';
 import { RequiresBinding } from '../binding/decorators/requires-binding.decorator';
 import { UsageService } from './usage.service';
 
@@ -18,51 +18,51 @@ export class UsageController {
 
   @Get()
   @ApiOperation({ summary: 'Get customer meters (list)' })
-  getMeters(@CurrentUser('id') userId: string) {
-    return this.usageService.getMeters(userId);
+  getMeters(@CustomerId() customerId: string) {
+    return this.usageService.getMeters(customerId);
   }
 
   @Get('consumption')
   @ApiOperation({ summary: 'Get 12-month consumption history for charts' })
-  getConsumptionHistory(@CurrentUser('id') userId: string) {
-    return this.usageService.getConsumptionHistory(userId);
+  getConsumptionHistory(@CustomerId() customerId: string) {
+    return this.usageService.getConsumptionHistory(customerId);
   }
 
   @Get('consumption/comparison')
   @ApiOperation({ summary: 'Compare consumption between two periods' })
   getConsumptionComparison(
-    @CurrentUser('id') userId: string,
+    @CustomerId() customerId: string,
     @Query('current') current: string,
     @Query('previous') previous: string,
   ) {
-    return this.usageService.getConsumptionComparison(userId, current, previous);
+    return this.usageService.getConsumptionComparison(customerId, current, previous);
   }
 
   @Get('consumption/:period')
   @ApiOperation({ summary: 'Get period reading detail with evidence photos' })
   getReadingDetail(
-    @CurrentUser('id') userId: string,
+    @CustomerId() customerId: string,
     @Param('period') period: string,
   ) {
-    return this.usageService.getReadingDetail(userId, period);
+    return this.usageService.getReadingDetail(customerId, period);
   }
 
   @Get(':meterId/calibration')
   @ApiOperation({ summary: 'Get meter calibration status' })
   getCalibrationStatus(
-    @CurrentUser('id') userId: string,
+    @CustomerId() customerId: string,
     @Param('meterId') meterId: string,
   ) {
-    return this.usageService.getCalibrationStatus(userId, meterId);
+    return this.usageService.getCalibrationStatus(customerId, meterId);
   }
 
   @Get(':meterId/history')
   @ApiOperation({ summary: 'Get meter replacement history' })
   getMeterHistory(
-    @CurrentUser('id') userId: string,
+    @CustomerId() customerId: string,
     @Param('meterId') meterId: string,
   ) {
-    return this.usageService.getMeterHistory(userId, meterId);
+    return this.usageService.getMeterHistory(customerId, meterId);
   }
 }
 
@@ -80,8 +80,8 @@ export class SmartMeterController {
 
   @Get('consumption')
   @ApiOperation({ summary: 'Get real-time consumption (current flow + today volume)' })
-  getRealtimeConsumption(@CurrentUser('id') userId: string) {
-    return this.usageService.getRealtimeConsumption(userId);
+  getRealtimeConsumption(@CustomerId() customerId: string) {
+    return this.usageService.getRealtimeConsumption(customerId);
   }
 
   @Get(':meterId/status')

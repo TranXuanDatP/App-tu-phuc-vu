@@ -64,7 +64,8 @@ describe('Payment Contract Tests', () => {
 
   describe('createPayment — contract shape', () => {
     it('should return {paymentId, invoiceId, amount, method, status, expiresAt, createdAt}', async () => {
-      const result = await paymentService.createPayment('USR-001', {
+      // QN-0912345 owns INV-2026-001 — bound customer paying their own invoice (A2).
+      const result = await paymentService.createPayment('QN-0912345', {
         invoiceId: 'INV-2026-001',
         method: 'qr_code',
       });
@@ -83,7 +84,7 @@ describe('Payment Contract Tests', () => {
     it('should generate different paymentIds for multiple calls', async () => {
       const ids = new Set<string>();
       for (let i = 0; i < 3; i++) {
-        const result = await paymentService.createPayment('USR-001', {
+        const result = await paymentService.createPayment('QN-0912345', {
           invoiceId: 'INV-2026-001',
           method: 'bank_transfer',
         });

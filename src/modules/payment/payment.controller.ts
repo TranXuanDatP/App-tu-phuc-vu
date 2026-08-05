@@ -6,7 +6,7 @@
  */
 import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { CurrentUser } from '@modules/auth/infrastructure/decorators/current-user.decorator';
+import { CustomerId } from '../binding/decorators/current-customer.decorator';
 import { Public } from '@modules/auth/infrastructure/decorators/public.decorator';
 import { RequiresBinding } from '../binding/decorators/requires-binding.decorator';
 import { InterServiceApiKeyGuard } from '@shared/security';
@@ -30,10 +30,10 @@ export class PaymentController {
   @Post()
   @ApiOperation({ summary: 'Initiate payment for an invoice' })
   createPayment(
-    @CurrentUser('id') userId: string,
+    @CustomerId() customerId: string,
     @Body() body: unknown,
   ) {
-    return this.paymentService.createPayment(userId, body);
+    return this.paymentService.createPayment(customerId, body);
   }
 
   /**
@@ -43,10 +43,10 @@ export class PaymentController {
   @Get('history')
   @ApiOperation({ summary: 'Get payment history (paginated)' })
   getPaymentHistory(
-    @CurrentUser('id') userId: string,
+    @CustomerId() customerId: string,
     @Query() query: Record<string, any>,
   ) {
-    return this.paymentService.getPaymentHistory(userId, query);
+    return this.paymentService.getPaymentHistory(customerId, query);
   }
 
   /**
@@ -56,10 +56,10 @@ export class PaymentController {
   @Post('batch')
   @ApiOperation({ summary: 'Pay multiple invoices at once' })
   createBatchPayment(
-    @CurrentUser('id') userId: string,
+    @CustomerId() customerId: string,
     @Body() body: unknown,
   ) {
-    return this.paymentService.createBatchPayment(userId, body);
+    return this.paymentService.createBatchPayment(customerId, body);
   }
 
   /**
@@ -69,10 +69,10 @@ export class PaymentController {
   @Post('auto-debit')
   @ApiOperation({ summary: 'Register auto debit for automatic bill payment' })
   setupAutoDebit(
-    @CurrentUser('id') userId: string,
+    @CustomerId() customerId: string,
     @Body() body: unknown,
   ) {
-    return this.paymentService.setupAutoDebit(userId, body);
+    return this.paymentService.setupAutoDebit(customerId, body);
   }
 }
 
@@ -93,8 +93,8 @@ export class DebtController {
    */
   @Get()
   @ApiOperation({ summary: 'Get outstanding debt with aging buckets' })
-  getOutstandingDebt(@CurrentUser('id') userId: string) {
-    return this.paymentService.getOutstandingDebt(userId);
+  getOutstandingDebt(@CustomerId() customerId: string) {
+    return this.paymentService.getOutstandingDebt(customerId);
   }
 
   /**
@@ -103,8 +103,8 @@ export class DebtController {
    */
   @Get('history')
   @ApiOperation({ summary: 'Get debt history' })
-  getDebtHistory(@CurrentUser('id') userId: string) {
-    return this.paymentService.getDebtHistory(userId);
+  getDebtHistory(@CustomerId() customerId: string) {
+    return this.paymentService.getDebtHistory(customerId);
   }
 }
 

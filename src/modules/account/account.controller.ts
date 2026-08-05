@@ -5,6 +5,7 @@
 import { Body, Controller, Get, Param, Post, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@modules/auth/infrastructure/decorators/current-user.decorator';
+import { CustomerId } from '../binding/decorators/current-customer.decorator';
 import { RequiresBinding } from '../binding/decorators/requires-binding.decorator';
 import { AccountService } from './account.service';
 
@@ -17,26 +18,26 @@ export class AccountController {
 
   @Get('profile')
   @ApiOperation({ summary: 'Get customer 360° profile' })
-  getProfile(@CurrentUser('id') userId: string) {
-    return this.accountService.getProfile(userId);
+  getProfile(@CustomerId() customerId: string) {
+    return this.accountService.getProfile(customerId);
   }
 
   @Get('timeline')
   @ApiOperation({ summary: 'Get customer interaction timeline' })
-  getTimeline(@CurrentUser('id') userId: string) {
-    return this.accountService.getTimeline(userId);
+  getTimeline(@CustomerId() customerId: string) {
+    return this.accountService.getTimeline(customerId);
   }
 
   @Get('related-accounts')
   @ApiOperation({ summary: 'Get related accounts (KCN relationship tree)' })
-  getRelatedAccounts(@CurrentUser('id') userId: string) {
-    return this.accountService.getRelatedAccounts(userId);
+  getRelatedAccounts(@CustomerId() customerId: string) {
+    return this.accountService.getRelatedAccounts(customerId);
   }
 
   @Put('profile')
   @ApiOperation({ summary: 'Update customer contact info' })
-  updateProfile(@CurrentUser('id') userId: string, @Body() body: unknown) {
-    return this.accountService.updateProfile(userId, body);
+  updateProfile(@CustomerId() customerId: string, @Body() body: unknown) {
+    return this.accountService.updateProfile(customerId, body);
   }
 }
 
