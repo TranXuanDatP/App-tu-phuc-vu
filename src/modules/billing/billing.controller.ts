@@ -7,6 +7,7 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@modules/auth/infrastructure/decorators/current-user.decorator';
+import { RequiresBinding } from '../binding/decorators/requires-binding.decorator';
 import { BillingService } from './billing.service';
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -15,6 +16,7 @@ import { BillingService } from './billing.service';
 
 @ApiTags('Billing — Tariff')
 @ApiBearerAuth('JWT-auth')
+@RequiresBinding()
 @Controller('billing/tariff')
 export class TariffController {
   constructor(private readonly billingService: BillingService) {}
@@ -66,6 +68,7 @@ export class TariffController {
 
 @ApiTags('Billing — Invoice')
 @ApiBearerAuth('JWT-auth')
+@RequiresBinding()
 @Controller('billing/invoices')
 export class InvoiceController {
   constructor(private readonly billingService: BillingService) {}

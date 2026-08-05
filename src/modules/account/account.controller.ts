@@ -5,10 +5,12 @@
 import { Body, Controller, Get, Param, Post, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@modules/auth/infrastructure/decorators/current-user.decorator';
+import { RequiresBinding } from '../binding/decorators/requires-binding.decorator';
 import { AccountService } from './account.service';
 
 @ApiTags('Customer')
 @ApiBearerAuth('JWT-auth')
+@RequiresBinding()
 @Controller('customers')
 export class AccountController {
   constructor(private readonly accountService: AccountService) {}

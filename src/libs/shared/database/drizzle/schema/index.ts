@@ -24,6 +24,8 @@ import { sessionsTable } from '@modules/auth/infrastructure/persistence/drizzle/
 
 import { verificationTable } from '@modules/auth/infrastructure/persistence/drizzle/schema/verification.schema';
 
+import { customerBindingsTable } from '@modules/binding/infrastructure/persistence/drizzle/schema/binding.schema';
+
 export const schema = {
   outboxTable,
   outboxStatusEnum,
@@ -35,4 +37,6 @@ export const schema = {
   providerTypeEnum,
   sessionsTable,
   verificationTable,
+  // Binding module table (customer binding proof)
+  customerBindingsTable,
 };

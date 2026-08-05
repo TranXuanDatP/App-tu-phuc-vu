@@ -11,6 +11,7 @@ import {
 import { PortModule } from 'src/libs/shared/port';
 import { AuthPropagationModule, AuthPropagationMiddleware } from 'src/libs/shared/auth-propagation';
 import { AuthModule } from 'src/modules/auth/auth.module';
+import { BindingModule } from 'src/modules/binding/binding.module';
 import { AccountModule } from 'src/modules/account/account.module';
 import { ServiceRequestModule } from 'src/modules/service-request/service-request.module';
 import { UsageModule } from 'src/modules/usage/usage.module';
@@ -38,6 +39,8 @@ import { ReportModule } from 'src/modules/report/report.module';
     HealthModule,
     // Auth Module — better-auth (customer identity, OTP, sessions)
     AuthModule,
+    // Binding Module — customer binding proof + BindingVerifiedGuard (global APP_GUARD)
+    BindingModule,
     // Account Module — customer 360° profile, timeline, related accounts (lean BFF; was customer)
     AccountModule,
     // Service-Request Module — contracts + e-contracts (lean BFF; was contract+econtract)

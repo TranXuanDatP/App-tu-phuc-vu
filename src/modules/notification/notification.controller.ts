@@ -15,10 +15,12 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@modules/auth/infrastructure/decorators/current-user.decorator';
+import { RequiresBinding } from '../binding/decorators/requires-binding.decorator';
 import { NotificationService } from './notification.service';
 
 @ApiTags('Notifications')
 @ApiBearerAuth('JWT-auth')
+@RequiresBinding()
 @Controller('notifications')
 export class NotificationController {
   constructor(private readonly notificationService: NotificationService) {}
@@ -50,6 +52,7 @@ export class NotificationController {
 
 @ApiTags('Proactive Alerts')
 @ApiBearerAuth('JWT-auth')
+@RequiresBinding()
 @Controller('proactive-notifications')
 export class ProactiveNotificationController {
   constructor(private readonly notificationService: NotificationService) {}

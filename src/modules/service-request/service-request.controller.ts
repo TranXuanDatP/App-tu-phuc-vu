@@ -7,6 +7,7 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@modules/auth/infrastructure/decorators/current-user.decorator';
+import { RequiresBinding } from '../binding/decorators/requires-binding.decorator';
 import { ServiceRequestService } from './service-request.service';
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -15,6 +16,7 @@ import { ServiceRequestService } from './service-request.service';
 
 @ApiTags('Contract')
 @ApiBearerAuth('JWT-auth')
+@RequiresBinding()
 @Controller('contracts')
 export class ContractController {
   constructor(private readonly serviceRequestService: ServiceRequestService) {}
@@ -75,6 +77,7 @@ export class ContractController {
 
 @ApiTags('e-Contract')
 @ApiBearerAuth('JWT-auth')
+@RequiresBinding()
 @Controller('econtracts')
 export class EcontractController {
   constructor(private readonly serviceRequestService: ServiceRequestService) {}

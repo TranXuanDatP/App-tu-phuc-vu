@@ -1,0 +1,229 @@
+/**
+ * BindingService — orchestrates the bind-init / bind challenge flow (A1.3).
+ *
+ * Security invariants (SPEC-A4-A1 §A1.3 + Rev-2 Fix 1):
+ *  - bind-init NEVER takes phone from the client — it resolves the OTP-verified
+ *    SESSION phone (server-internal). resolve/phone is not exposed to clients.
+ *  - bind NEVER accepts a free-form customerRef — it rejects any ref that did not
+ *    come back from THIS session's bind-init resolve (stored in cache, TTL 5 min).
+ *    An attacker with session A therefore cannot bind a customerRef of session B.
+ *  - the BFF does not know the secret — it forwards secretType/secretValue to
+ *    customer-service and acts only on {verified}.
+ *  - on verify=true, the real customerId is fetched via profile() and ENCRYPTED at
+ *    rest into the binding row (PiiEncryptionService, Fix 5b).
+ *
+ * Lockout (A1.4) is delegated to BindingRateLimiter (dual ceiling).
+ */
+import { Injectable, Inject, Logger, HttpException, HttpStatus } from '@nestjs/common';
+import { eq, and } from 'drizzle-orm';
+import { randomUUID } from 'crypto';
+import { type DrizzleDB } from '@shared';
+import {
+  DATABASE_WRITE_TOKEN,
+  CACHE_SERVICE_TOKEN,
+} from '@core/constants/tokens';
+import type { ICacheService } from '@core';
+import { ValidationException } from '@core/common';
+import { PII_ENCRYPTION_SERVICE_TOKEN } from '@modules/auth/constants/tokens';
+import { PiiEncryptionService } from '@modules/auth/infrastructure/persistence/encryption/pii-encryption.service';
+import { usersTable } from '@modules/auth/infrastructure/persistence/drizzle/schema/user.schema';
+import {
+  CUSTOMER_SERVICE_CLIENT,
+} from '@modules/account/clients/customer-service.client';
+import type {
+  CustomerServiceClient,
+  ResolveResult,
+} from '@modules/account/clients/customer-service.client';
+import { customerBindingsTable } from './infrastructure/persistence/drizzle/schema/binding.schema';
+import { BindingRateLimiter } from './binding-rate-limiter.service';
+import type { BindBody, BindResult } from './dto/bind.dto';
+
+@Injectable()
+export class BindingService {
+  private readonly logger = new Logger(BindingService.name);
+  /** bind-init resolve results live 5 min — a bind must follow reasonably soon. */
+  private readonly INIT_TTL_SEC = 5 * 60;
+
+  constructor(
+    @Inject(CUSTOMER_SERVICE_CLIENT) private readonly customerService: CustomerServiceClient,
+    @Inject(DATABASE_WRITE_TOKEN) private readonly db: DrizzleDB,
+    @Inject(CACHE_SERVICE_TOKEN) private readonly cache: ICacheService,
+    @Inject(PII_ENCRYPTION_SERVICE_TOKEN) private readonly pii: PiiEncryptionService,
+    private readonly rateLimiter: BindingRateLimiter,
+  ) {}
+
+  /**
+   * POST /auth/bind-init — resolve the session phone server-side, stash the allowed
+   * customerRefs for this session, return masked candidates for the user to pick.
+   */
+  async bindInit(userId: string, sessionId: string): Promise<ResolveResult> {
+    const phone = await this.getSessionPhone(userId);
+    if (!phone) {
+      // No OTP-verified phone on the identity → nothing to resolve.
+      return { status: 'none' };
+    }
+
+    const result = await this.customerService.resolve(phone);
+    // Persist the resolve result keyed by sessionId so bind can validate customerRef
+    // provenance (Fix 1). Single-use: deleted after a successful bind.
+    await this.cache.set(this.initKey(sessionId), result, this.INIT_TTL_SEC);
+    return result;
+  }
+
+  /**
+   * POST /auth/bind — verify a bill-secret against a session-scoped customerRef.
+   * Returns {bound:false} on wrong secret (until lockout → 429), {bound:true,...} on
+   * success with the row written + customerId encrypted at rest.
+   */
+  async bind(
+    userId: string,
+    sessionId: string,
+    body: BindBody,
+    deviceInfo: string | null,
+  ): Promise<BindResult> {
+    // Fix 1: customerRef must originate from THIS session's bind-init resolve.
+    const init = await this.cache.get<ResolveResult | null>(this.initKey(sessionId));
+    if (!init) {
+      throw new ValidationException(
+        'Phiên liên kết hết hạn hoặc chưa bắt đầu. Vui lòng thử lại.',
+      );
+    }
+    if (!this.allowedRefs(init).includes(body.customerRef)) {
+      this.logger.warn(
+        `bind: customerRef not in session resolve — rejecting (user=${userId})`,
+      );
+      throw new ValidationException('Khách hàng không hợp lệ cho phiên này.');
+    }
+
+    // A1.4 — dual-ceiling lockout check BEFORE attempting verify.
+    const lock = await this.rateLimiter.checkLocked(userId, body.customerRef);
+    if (lock.locked) {
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          code: 'BINDING_LOCKED',
+          message: 'Đã vượt số lần thử cho phép. Vui lòng thử lại sau.',
+          retryAfter: lock.retryAfterSec,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const verdict = await this.customerService.verify({
+      customerRef: body.customerRef,
+      secretType: body.secretType,
+      secretValue: body.secretValue,
+    });
+
+    if (!verdict.verified) {
+      const fail = await this.rateLimiter.recordFailure(userId, body.customerRef);
+      if (fail.lockedNow) {
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.TOO_MANY_REQUESTS,
+            code: 'BINDING_LOCKED',
+            message: 'Đã vượt số lần thử cho phép. Vui lòng thử lại sau.',
+            retryAfter: fail.retryAfterSec,
+          },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+      return { bound: false };
+    }
+
+    // Verified → fetch the real customerId, encrypt at rest, upsert the binding.
+    const profile = await this.customerService.profile(body.customerRef);
+    const encCustomerId = this.pii.encryptIfNeeded(profile.customerId);
+    const now = new Date();
+    await this.upsertVerified({
+      userId,
+      customerRef: body.customerRef,
+      encCustomerId,
+      factorUsed: body.secretType,
+      deviceInfo,
+      now,
+    });
+    await this.rateLimiter.clearFailures(userId, body.customerRef);
+    await this.cache.delete(this.initKey(sessionId)); // single-use token
+
+    this.logger.log(
+      `binding verified: user=${userId} customerRef=${body.customerRef} customerId=${profile.customerId}`,
+    );
+    return { bound: true, customerId: profile.customerId };
+  }
+
+  // ── helpers ────────────────────────────────────────────────────────────────
+
+  /** The refs this session is allowed to bind — only what resolve returned. */
+  private allowedRefs(init: ResolveResult): string[] {
+    if (init.status === 'one') return init.customerRef ? [init.customerRef] : [];
+    if (init.status === 'many') return (init.candidates ?? []).map((c) => c.customerRef);
+    return [];
+  }
+
+  /** Read the OTP-verified phone off the identity row (server-side, never client). */
+  private async getSessionPhone(userId: string): Promise<string | null> {
+    const rows = await this.db
+      .select({ phoneNumber: usersTable.phoneNumber })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    return rows[0]?.phoneNumber ?? null;
+  }
+
+  /** Insert a verified binding, or reactivate an existing (user, customerRef) row. */
+  private async upsertVerified(args: {
+    userId: string;
+    customerRef: string;
+    encCustomerId: string | null;
+    factorUsed: string;
+    deviceInfo: string | null;
+    now: Date;
+  }): Promise<void> {
+    const { userId, customerRef, encCustomerId, factorUsed, deviceInfo, now } = args;
+    const existing = await this.db
+      .select({ id: customerBindingsTable.id })
+      .from(customerBindingsTable)
+      .where(
+        and(
+          eq(customerBindingsTable.userId, userId),
+          eq(customerBindingsTable.customerRef, customerRef),
+        ),
+      )
+      .limit(1);
+
+    if (existing[0]) {
+      await this.db
+        .update(customerBindingsTable)
+        .set({
+          customerId: encCustomerId,
+          status: 'verified',
+          factorUsed,
+          verifiedAt: now,
+          boundAt: now,
+          deviceInfo,
+          revokedAt: null,
+          revokedReason: null,
+          updatedAt: now,
+        })
+        .where(eq(customerBindingsTable.id, existing[0].id));
+    } else {
+      await this.db.insert(customerBindingsTable).values({
+        id: randomUUID(),
+        userId,
+        customerRef,
+        customerId: encCustomerId,
+        status: 'verified',
+        factorUsed,
+        verifiedAt: now,
+        boundAt: now,
+        deviceInfo,
+        updatedAt: now,
+      });
+    }
+  }
+
+  private initKey(sessionId: string): string {
+    return `bind:init:${sessionId}`;
+  }
+}
