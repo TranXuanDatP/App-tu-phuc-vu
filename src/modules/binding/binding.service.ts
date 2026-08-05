@@ -43,6 +43,8 @@ export class BindingService {
   private readonly logger = new Logger(BindingService.name);
   /** bind-init resolve results live 5 min — a bind must follow reasonably soon. */
   private readonly INIT_TTL_SEC = 5 * 60;
+  /** Guard binding cache TTL — keep in sync with BindingVerifiedGuard.CACHE_TTL_SEC. */
+  private readonly BINDING_CACHE_TTL_SEC = 60 * 60;
 
   constructor(
     @Inject(CUSTOMER_SERVICE_CLIENT) private readonly customerService: CustomerServiceClient,
@@ -146,6 +148,25 @@ export class BindingService {
     await this.rateLimiter.clearFailures(userId, body.customerRef);
     await this.cache.delete(this.initKey(sessionId)); // single-use token
 
+    // Warm the guard's binding cache so the next @RequiresBinding request is a cache HIT.
+    // Store CIPHERTEXT only (A2 D3 / redline #1) — the guard decrypts per-request.
+    await this.cache
+      .set(
+        this.bindKey(userId),
+        {
+          customerIdCipher: encCustomerId,
+          customerRef: body.customerRef,
+          verifiedAt: now,
+          deviceInfo,
+        },
+        this.BINDING_CACHE_TTL_SEC,
+      )
+      .catch((err: unknown) => {
+        this.logger.warn(
+          `failed to warm binding cache: ${(err as Error).message}`,
+        );
+      });
+
     this.logger.log(
       `binding verified: user=${userId} customerRef=${body.customerRef} customerId=${profile.customerId}`,
     );
@@ -225,5 +246,9 @@ export class BindingService {
 
   private initKey(sessionId: string): string {
     return `bind:init:${sessionId}`;
+  }
+
+  private bindKey(userId: string): string {
+    return `bind:${userId}`;
   }
 }

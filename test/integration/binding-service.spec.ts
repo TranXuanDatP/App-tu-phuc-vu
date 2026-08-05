@@ -53,7 +53,7 @@ describe('BindingService (A1.3 + A1.4)', () => {
       profile: jest.fn(),
       resolveChannel: jest.fn(),
     };
-    pii = { encryptIfNeeded: jest.fn((v: string) => `enc:${v}`) };
+    pii = { encryptIfNeeded: jest.fn((v: string) => Buffer.from(v).toString('base64')) };
   });
 
   // ── bind-init (Fix 1: session phone, server-side) ──────────────────────────
@@ -168,7 +168,8 @@ describe('BindingService (A1.3 + A1.4)', () => {
       const result = await service.bind('user-1', SESSION_ID, VALID_BODY, 'device-xyz');
 
       expect(result).toEqual({ bound: true, customerId: 'QN-0912345' });
-      // customerId ENCRYPTED at rest.
+      // customerId ENCRYPTED at rest (base64 toy cipher — opaque, reversible).
+      const cipher = Buffer.from('QN-0912345').toString('base64');
       expect(pii.encryptIfNeeded).toHaveBeenCalledWith('QN-0912345');
       // insert path (no existing row); the binding object carries the ENCRYPTED id.
       expect(db.insertValues).toHaveBeenCalledTimes(1);
@@ -176,13 +177,17 @@ describe('BindingService (A1.3 + A1.4)', () => {
       expect(row).toMatchObject({
         userId: 'user-1',
         customerRef: 'REF-001',
-        customerId: 'enc:QN-0912345',
+        customerId: cipher,
         status: 'verified',
         factorUsed: 'last_invoice_amount',
         deviceInfo: 'device-xyz',
       });
       // init token is single-use → consumed after a successful bind.
       expect(await cache.get(`bind:init:${SESSION_ID}`)).toBeNull();
+      // guard binding cache warmed with CIPHERTEXT (redline #1) — never plaintext.
+      const warmed = await cache.get<{ customerIdCipher: string }>(`bind:user-1`);
+      expect(warmed?.customerIdCipher).toBe(cipher);
+      expect(JSON.stringify(warmed)).not.toContain('QN-0912345');
     });
   });
 
