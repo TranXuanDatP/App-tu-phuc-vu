@@ -17,7 +17,7 @@
  *   GET   /customers/get-related-accounts?customerId=...
  *   PUT   /customers/update-profile         body { customerId, ... }
  *
- * See docs/customer-service-contract.md for the full DTO contract.
+ * See docs/SPEC-downstream-ownership-contract.md §2 for the full DTO contract.
  *
  * PortHttpClient handles: per-port timeout (AbortController), downstream JWT
  * injection, correlation-id propagation, idempotency key for POST/PUT.

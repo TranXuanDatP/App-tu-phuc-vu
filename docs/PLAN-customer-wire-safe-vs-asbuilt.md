@@ -1,7 +1,7 @@
 # ⚠️ SUPERSEDED — giữ làm archive (2026-08-06)
 
-> Đã được thay bởi `docs/SPEC-safe-wire-app-vs-customer-service.md` (wire app-BFF↔customer-service)
-> + `docs/SPEC-downstream-ownership-contract.md` (ownership các service data). **Giữ doc này vì
+> Đã được thay bởi `docs/SPEC-downstream-ownership-contract.md` (self-contained: wire +
+> resolve/verify/profile §2 + ownership §1) và `docs/SPEC-binding.md` (nội bộ). **Giữ doc này vì
 > bảng so sánh as-built (839443c) vs safe-wire** — guardrail chống việc "đơn giản hóa" ngược về
 > cách as-built (ít code hơn, nhưng reopening porting/multi-match/PII leak). Lý do bị quên = thiết
 > kế an toàn lùi về. Không xóa — chỉ supersede.

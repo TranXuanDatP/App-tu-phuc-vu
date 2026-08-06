@@ -15,10 +15,8 @@
 |---|---|---|
 | **README.md** (file này) | Hướng dẫn sử dụng + setup | Lần đầu tiếp xúc dự án |
 | [docs/project-documentation.md](docs/project-documentation.md) | Tổng quan kiến trúc + phân tích modules | Hiểu cấu trúc & business logic |
-| [docs/SPEC-A4-A1-build-ready.md](docs/SPEC-A4-A1-build-ready.md) | Customer binding flow (challenge/verify→bind) — A4 + A1.1‑A1.4 | Hiểu binding domain |
-| [docs/SPEC-A2-customerId-from-binding.md](docs/SPEC-A2-customerId-from-binding.md) | A2: customerId-from-binding (đóng IDOR ở controller) | Hiểu A2 + remaining |
-| [docs/SPEC-downstream-ownership-contract.md](docs/SPEC-downstream-ownership-contract.md) | Hợp đồng ownership gửi team downstream | Handoff downstream |
-| [docs/SPEC-safe-wire-app-vs-customer-service.md](docs/SPEC-safe-wire-app-vs-customer-service.md) | Wire an toàn app‑BFF ↔ customer‑service | Hiểu ranh giới 2 bên |
+| [docs/SPEC-binding.md](docs/SPEC-binding.md) | Customer binding — rationale bảo mật + trạng thái + việc còn lại (nội bộ) | Hiểu binding domain + remaining |
+| [docs/SPEC-downstream-ownership-contract.md](docs/SPEC-downstream-ownership-contract.md) | Hợp đồng ownership + resolve/verify/profile gửi team downstream (self-contained) | Handoff downstream |
 
 ---
 

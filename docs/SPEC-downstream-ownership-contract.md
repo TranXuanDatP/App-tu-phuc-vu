@@ -2,9 +2,8 @@
 
 > **Handable độc lập** — doc này gửi cho team sở hữu billing/invoice, meter/usage,
 > contract, incident-report(Phản ánh), customer-service. Không chứa chuyện nội bộ
-> của app-BFF (regression register, drop cột, sync mobile gate — coi doc riêng).
-> Bổ sung `SPEC-safe-wire-app-vs-customer-service.md` (resolve/verify/profile) bằng
-> phần ownership cho các service DATA.
+> của app-BFF (regression register, drop cột, sync mobile gate — coi `SPEC-binding.md`).
+> Tự-contained: resolve/verify/profile (§2) + ownership các service data (§1).
 
 ---
 
@@ -99,15 +98,36 @@ throw 404. Các port khác khi build mock phía BFF (hoặc downstream thật) t
 
 ---
 
-## 2. resolve/verify/profile (customer-service) — recap
+## 2. resolve/verify/profile (customer-service) — interface đầy đủ
 
-Đã spec ở `SPEC-safe-wire-app-vs-customer-service.md` Phần C. Tóm tắt để doc tự-contained:
-- `POST /resolve/phone {phone}` → `{status:'none'|'one'|'many', customerRef?, maskedHint?, candidates?}` — mask tối thiểu, không PII.
-- `POST /verify {customerRef, secretType, secretValue}` → `{verified}` — server-side, không echo secret.
-- `GET /profile {customerRef}` → full Customer 360 (chỉ post-bind, scope customerId).
-- `POST /resolve/channel` — omnichannel, cùng authority.
+Customer-service expose 4 endpoint (service-to-service, JWT, leaf). Đây là phần contract
+cho customer-service; ownership cho các service DATA ở §1.
 
-**B5 (câu chặn):** verify được secret nào? (last_invoice_amount ưu tiên / mã KH / hợp đồng). Câu này chốt `secretType`.
+```
+POST /resolve/phone   { phone }
+  → 0 match: { status: "none" }                                 (đồng nhất mọi lần — không enumerate)
+  → 1 match: { status: "one",  customerRef, maskedHint }        (mask tối thiểu, KHÔNG full PII / customerId thật)
+  → N match: { status: "many", candidates: [{customerRef, maskedHint}] }
+
+POST /resolve/channel { channel, channelId }                    (omnichannel — CÙNG authority)
+  → ResolveResult (giống /resolve/phone)
+
+POST /verify          { customerRef, secretType, secretValue }
+  → { verified: boolean }                                       (server-side; secret thật KHÔNG rời service)
+
+GET  /profile         { customerRef }                           (chỉ gọi được post-bind, scope customerId)
+  → { customerId, fullName, classification, address, contactInfo, status }   (full Customer 360)
+```
+
+**Ràng buộc bảo mật:**
+- `/resolve/*` và `/verify` nhận token scope `lookup` (claim `phone`, KHÔNG customerId).
+- `/profile` nhận token scope `customerId` — full profile CHỈ lấy sau `verify=true`.
+- **resolve mask tối thiểu**: `maskedHint` theo ĐỊA CHỈ (vd `"Nguyễn V*** • 12 Lê Lợi"`), không
+  chứa mã KH/amount/contract#; 0-match trả cùng shape mỗi lần (không enumerate).
+- **verify server-side**: không bao giờ echo giá trị secret thật; `verified:false` cho cả
+  sai-value lẫn unknown-customerRef (cùng shape, no oracle).
+- **B5 (câu chặn duy nhất):** verify được bí mật nào? (`last_invoice_amount` ưu tiên — chống
+  porting tốt nhất — hay chỉ `mã KH` / `số hợp đồng`). Câu này chốt `secretType` của bind flow.
 
 ---
 
