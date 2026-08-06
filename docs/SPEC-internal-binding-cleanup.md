@@ -59,15 +59,35 @@ Cả hai nhánh kết ở **một dòng `customer_bindings` status='verified'`. 
 **nhánh create chỉ chạy khi resolve='none'**, và resolve phải **authoritative complete**
 (không false-negative — giả định downstream, coi `SPEC-downstream-ownership-contract §3`).
 
+### Hai điểm reject — re-resolve KHÔNG đóng TOCTOU, chỉ thu hẹp khe
+
+Re-resolve là một call riêng, create là call khác → khe giữa "authority nói none" và
+"authority create" vẫn mở: khách thật cho số đó xuất hiện đúng trong khe → create duplicate
++ auto-bind = bypass. Re-resolve làm khe nhỏ lại, **không làm nó biến mất**.
+
+Cái thật sự đóng race là **create bị reject nếu customer giờ đã tồn tại** (atomic
+phone-uniqueness ở authority — `SPEC-downstream-ownership-contract §3.1`). Flow phải xử lý
+**HAI điểm reject**, không phải một:
+
+1. **re-resolve thấy tồn tại** → reroute challenge (sớm, **best-effort** bắt ca thường gặp — UX).
+2. **create bị reject vì customer vừa xuất hiện** (đuôi race) → **cũng reroute challenge**;
+   BFF **TUYỆT ĐỐI không proceed auto-bind**. **Đây mới là gate bảo mật thật.**
+
+Đọc nhầm "re-resolve đóng được race" = quên build handler điểm 2 → đuôi race vẫn auto-bind,
+đúng bypass ta đóng. **Phụ thuộc external §3.1:** nếu authority KHÔNG enforce
+phone-uniqueness ở create, BFF không thể tự đóng race dù re-resolve bao nhiêu lần — điều kiện
+downstream (xem §6.3 downstream).
+
 ### Thực thi
-- `register` thành **nhánh create+bind** của flow bind: server-side **re-resolve** phone
-  (không tin "tôi mới" từ client; chống TTL-gap giữa bind-init và register), chỉ create+
-  auto-bind khi resolve='none'. Nếu resolve thấy tồn tại → 409/redirect sang nhánh challenge.
-- Insert binding cùng transaction với create-customer (một dòng verified).
-- Design phải **encode điều kiện resolve NGAY BÂY GIỜ** (mock) — không "chờ live mới thêm".
-  Flip URL mà chưa có resolve-gate = bypass sống.
-- `check-registration` + `link-customer`: legacy, defanged → **remove** sau khi register-
-  bind hợp nhất (chúng trở nên dư). Không giữ path link nào ngoài bind/register-hai-nhánh.
+- `register` = nhánh create+bind của flow bind: **re-resolve server-side** (best-effort bắt
+  sớm — không tin "tôi mới" từ client), chỉ gọi create khi resolve='none'.
+- **Handler create-rejection (gate điểm 2):** create trả 409/conflict (phone đã tồn tại) →
+  **reroute nhánh challenge**, KHÔNG auto-bind, KHÔNG insert binding. Bắt buộc có.
+- Insert binding **cùng transaction** với create, **chỉ khi create thành công**.
+- **Encode CẢ HAI reject NGAY (mock):** mock create mô phỏng 409 khi phone trùng, để test
+  handler điểm 2. Flip URL mà thiếu handler = bypass sống.
+- `check-registration` + `link-customer`: legacy, defanged → **remove** sau hợp nhất. Không
+  giữ path link nào ngoài bind/register-hai-nhánh.
 
 ---
 
@@ -92,8 +112,11 @@ repoint-then-remove.)
 1. **Repoint** `auth/me` derive từ binding: `linked = hasVerifiedBinding(userId)`,
    `customerId` = decrypt(binding) (hoặc ẩn nếu không muốn lộ). `profileStatus` → xem §3b.
 2. **Repoint** `register` dedup → "đã có verified binding" thay vì `profileStatus`.
-3. Sync mobile `ProfileGate` → đọc `binding-verified`, không `profileStatus`.
-4. **Sau khi** hết reader → drop `users.customerId` / `profile_status` (migration mới).
+3. **Additive-then-remove ở tầng API** (KHÔNG flip đồng bộ hai deploy — coi §"Mobile gate
+   skew" dưới): trong chuyển, `auth/me` trả **cả hai** — `profileStatus` (derive, backward-
+   compat) VÀ `linked`/`binding-verified` — để mobile migrate theo lịch riêng.
+4. **Sau khi** mobile đã chuyển đọc field mới + hết reader BFF → drop `users.customerId` /
+   `profile_status` + field `profileStatus` cũ (migration).
 
 ### §3b — kiểm semantics `profile_status` trước khi gộp
 `profile_status` có thể đang trộn hai khái niệm khác:
@@ -104,11 +127,21 @@ repoint-then-remove.)
 
 Tách rõ hai khái niệm TRƯỚC khi collapse. Không assume `profile_status` = link.
 
-### Mobile gate skew (phải sync)
+### Mobile gate skew — additive-then-remove (KHÔNG "cùng lúc" hai deploy)
 Hiện mobile `ProfileGate` đọc `profileStatus` ('complete') → có thể hiện dashboard khi BFF
-guard chưa có binding → **gate lệch**: FE tưởng đủ điều kiện, BFF 403. Sau §3, mobile đọc
-`binding-verified` từ `/auth/me` (field mới, derive từ binding). Đây là một khe phải bịt
-cùng lúc với repoint.
+guard chưa có binding → **gate lệch** (FE tưởng đủ điều kiện, BFF 403). Nhưng mobile là
+repo/deploy riêng (Expo) → "đồng bộ cutover" hai deploy độc lập gần không đạt: luôn có cửa
+sổ BFF đổi mà mobile chưa (hoặc ngược lại) → lệch đúng lúc chuyển.
+
+Giải pháp: **additive ở tầng API**, mobile migrate theo lịch riêng:
+1. `auth/me` trả **cả hai** field: `profileStatus` (derive từ binding, backward-compat) VÀ
+   `bindingVerified` (field mới, nguồn thật).
+2. Mobile chuyển đọc `bindingVerified` theo lịch deploy riêng (không cần cutover đồng bộ).
+3. Sau mobile chuyển xong → bỏ field `profileStatus` cũ (drop cùng `users` columns).
+
+Với hai deploy độc lập, **additive luôn thắng "cùng lúc"** — đây chính là
+repoint-then-remove áp cho contract API. BFF không bao giờ ở trạng thái "đã bỏ field cũ
+trước khi mobile chuyển xong".
 
 ---
 
