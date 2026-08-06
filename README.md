@@ -14,10 +14,11 @@
 | Tài liệu | Mô tả | Khi nào đọc |
 |---|---|---|
 | **README.md** (file này) | Hướng dẫn sử dụng + setup | Lần đầu tiếp xúc dự án |
-| [docs/test-guide.md](docs/test-guide.md) | **Hướng dẫn test** (unit + smoke + manual) | Khi cần test |
-| [docs/project-documentation.md](docs/project-documentation.md) | Tổng quan kiến trúc + phân tích 8 modules | Hiểu cấu trúc & business logic |
-| [docs/production-test-report.md](docs/production-test-report.md) | Kết quả test production Docker | Kiểm tra trạng thái endpoint |
-| [docs/test-coverage-db-schema-analysis.md](docs/test-coverage-db-schema-analysis.md) | Test coverage + DB schema | Review test gaps, hiểu data model |
+| [docs/project-documentation.md](docs/project-documentation.md) | Tổng quan kiến trúc + phân tích modules | Hiểu cấu trúc & business logic |
+| [docs/SPEC-A4-A1-build-ready.md](docs/SPEC-A4-A1-build-ready.md) | Customer binding flow (challenge/verify→bind) — A4 + A1.1‑A1.4 | Hiểu binding domain |
+| [docs/SPEC-A2-customerId-from-binding.md](docs/SPEC-A2-customerId-from-binding.md) | A2: customerId-from-binding (đóng IDOR ở controller) | Hiểu A2 + remaining |
+| [docs/SPEC-downstream-ownership-contract.md](docs/SPEC-downstream-ownership-contract.md) | Hợp đồng ownership gửi team downstream | Handoff downstream |
+| [docs/SPEC-safe-wire-app-vs-customer-service.md](docs/SPEC-safe-wire-app-vs-customer-service.md) | Wire an toàn app‑BFF ↔ customer‑service | Hiểu ranh giới 2 bên |
 
 ---
 
@@ -160,7 +161,7 @@ Options:
 ./scripts/smoke-test.sh --no-auth   # bỏ qua auth, dùng cookie có sẵn
 ```
 
-📖 Chi tiết + test thủ công: [docs/test-guide.md](docs/test-guide.md)
+> Test guide đã được dọn (đăng trên README phần test + `package.json` scripts). Chi tiết contract test: `test/integration/*.spec.ts`.
 
 ---
 
