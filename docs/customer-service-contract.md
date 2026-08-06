@@ -1,3 +1,11 @@
+# ⚠️ SUPERSEDED — giữ làm archive (2026-08-06)
+
+> Hợp đồng resolve/verify/profile đã được gộp/vượt bởi `docs/SPEC-safe-wire-app-vs-customer-service.md`
+> (Phần C — interface đầy đủ) + `docs/SPEC-downstream-ownership-contract.md` (ownership data). **Giữ
+> file này vì CODE đang reference** — `src/modules/account/clients/customer-profile-live.client.ts`
+> trỏ tới đây cho DTO contract; xóa = dead-link. Khi repoint comment sang SPEC-safe-wire + hết reader
+> thì remove được. Không hard-delete (repoint-then-remove, cùng kỷ luật cột `users.customerId`).
+
 # Customer Service — Contract cho team build (handoff)
 
 > Tài liệu này mô tả **những gì service Customer 360 (`customer-service`) cần cung cấp**

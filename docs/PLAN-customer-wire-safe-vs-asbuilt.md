@@ -1,3 +1,11 @@
+# ⚠️ SUPERSEDED — giữ làm archive (2026-08-06)
+
+> Đã được thay bởi `docs/SPEC-safe-wire-app-vs-customer-service.md` (wire app-BFF↔customer-service)
+> + `docs/SPEC-downstream-ownership-contract.md` (ownership các service data). **Giữ doc này vì
+> bảng so sánh as-built (839443c) vs safe-wire** — guardrail chống việc "đơn giản hóa" ngược về
+> cách as-built (ít code hơn, nhưng reopening porting/multi-match/PII leak). Lý do bị quên = thiết
+> kế an toàn lùi về. Không xóa — chỉ supersede.
+
 # Kế hoạch — Customer match-wire an toàn (so sánh với 839443c + ghép runbook Phase 3)
 
 > Bổ sung cho `RUNBOOK-deploy-verify-phase3-k8s.md`. Mục tiêu: giữ nguyên plumbing đã build ở commit `839443c`, chèn tầng binding danh tính để không dính porting-leak / multi-match-leak / PII-leak, và biến bước go-live thành checklist bắt buộc thay vì "set 1 env var".
