@@ -30,7 +30,11 @@ không thuộc customerId đó.**
    thuộc ai) nằm downstream. Downstream return **404 (không 403)** khi record không thuộc
    customerId → no oracle (không phân biệt "không tồn tại" vs "không phải của mình").
 3. **404-no-oracle** — response "không của mình" và "không tồn tại" phải KHÔNG phân biệt
-   được (cùng shape, cùng status). Khách không dò được sự tồn tại record của người khác.
+   được ở **status, body, VÀ timing**. Cẩn thận timing: "không của mình" thường phải tra DB
+   (tìm record → check owner → 404) trong khi "không tồn tại" có thể short-circuit sớm →
+   khác biệt thời gian đáp ứng tái mở oracle dù body 404 giống hệt. Team phải biết timing là
+   kênh rò và chủ động san bằng. Khách không dò được sự tồn tại record của người khác qua
+   bất kỳ kênh nào.
 4. **resolve là authority new-vs-existing** — downstream customer-service resolve/phone
    phải **đầy đủ + chính xác**. Nếu resolve lỡ một khách đang tồn tại, nhánh "create mới"
    sẽ tạo duplicate + auto-bind → bypass (xem §5). Completeness của resolve là giả định sống
@@ -48,6 +52,10 @@ Mỗi port: BFF forward `customerId` (post-bind) cùng selector. Downstream scop
 | **invoice** | get-list | customerId | chỉ trả hóa đơn thuộc customerId |
 | invoice | get-by-id | customerId + invoiceId | invoice.owner = customerId, else 404 |
 | invoice | get-pdf | customerId + invoiceId | idem |
+| **payment** | history / list | customerId | scope customerId (lịch sử thanh toán theo customerId) |
+| payment | get-by-id | customerId + paymentId | payment.owner = customerId, else 404 |
+| payment | create | customerId + invoiceId | **verify invoice đích thuộc customerId** trước khi tạo QR/ thanh toán — KHÔNG cho pay hóa đơn người khác (financial IDOR) |
+| **debt (công nợ)** | list / detail / history | customerId | scope customerId — công nợ là dữ liệu tài chính nhạy cảm |
 | **tariff** | get-tariff-plan | customerId + contractId | contract thuộc customerId, else 404 |
 | tariff | get-tariff-breakdown | customerId + contractId + invoiceId | contract + invoice đều thuộc customerId |
 | tariff | get-applicable-fees | customerId + contractId | contract thuộc customerId |
@@ -58,15 +66,20 @@ Mỗi port: BFF forward `customerId` (post-bind) cùng selector. Downstream scop
 | **incident-report (Phản ánh)** | create-report | customerId | gán reporter = customerId |
 | Phản ánh | list/detail | customerId + reportId | report.reporter = customerId, else 404 |
 | **incident (sự cố hạ tầng)** | list/detail | (area) | **KHÔNG scope customerId** — area-level (mất nước cả phường); chỉ cần binding verified (bound-shared) |
+| **notification (per-customer)** | "hóa đơn đến hạn", "đã thanh toán", alert cá nhân | customerId | scope customerId — nội dung + trạng thái là PII tài chính |
+| **notification (broadcast)** | "mất nước khu vực", alert vùng | (area) | bound-shared, KHÔNG scope customerId |
 | **account/profile** | get-profile / timeline / related / update | customerId | scope customerId |
 
-> Lưu ý Phản ánh ≠ incident: Phản ánh = record per-customer có PII người báo → scope
-> customerId. Incident = sự kiện hạ tầng cấp khu vực → bound-shared (chỉ cần bind).
+> Lưu ý Phản ánh ≠ incident, và notification cũng split y hệt:
+> - **Per-customer** (có PII/nội dung cá nhân) → scope customerId: Phản ánh (reporter PII),
+>   payment/debt (tài chính), notification cá nhân ("hóa đơn đến hạn", "đã thanh toán").
+> - **Broadcast/area** (không PII cá nhân) → bound-shared (chỉ cần bind): incident (mất nước
+>   cả phường), notification vùng ("mất nước khu vực").
 >
 > ⚠️ Phân loại này dựa trên **schema review BFF** (`createReport` mang `customerId`+address;
-> incident có `affectedCustomers:count`, không có reporter PII). **Cần chủ dữ liệu
-> incident/Phản ánh confirm** (xem §6). Nếu record thực mang PII người báo ở tầng tôi chưa
-> thấy, phải scope per-customer — không để lửng.
+> incident có `affectedCustomers:count`; notification có cả loại cá nhân và vùng). **Cần chủ
+> dữ liệu từng service confirm** (§6). Nếu record thực mang PII cá nhân ở tầng tôi chưa thấy,
+> phải scope per-customer — không để lửng.
 
 ### 1.1 Key-mapping (quan trọng — tránh BFF cầm sai khóa)
 
@@ -106,11 +119,28 @@ bind-init (BFF dùng session.phone) → resolve/phone
   └─ status='none' (KHÁCH MỚI)          → register: create Customer 360 → binding verified (creation=proof)
 ```
 
-Cả hai nhánh kết ở **một dòng `customer_bindings` status='verified'**. Quy tắc sống còn:
-**nhánh create chỉ chạy khi resolve trả 'none'**. Nếu resolve lỡ (trả 'none' cho số đã tồn
-tại) → create duplicate + auto-bind = porting-bypass. Nên downstream resolve phải
-**authoritative + complete** (không false-negative). Đây là giả định an toàn lớn nhất của
-toàn bộ flow — team customer-service phải confirm.
+Cả hai nhánh kết ở **một dòng `customer_bindings` status='verified'**.
+
+### 3.1 TOCTOU — create phải atomic phone-unique (fail-closed), không tin resolve='none'
+Giữa lúc resolve trả 'none' và lúc create, khách thật cho số đó có thể được tạo ở hệ
+customer-service/billing (ở dịch vụ khác, hoặc 2 request cùng số cùng resolve 'none'):
+- auto-bind vào một khách giờ đã tồn tại, KHÔNG qua challenge = bypass; hoặc
+- 2 Customer 360 + 2 auto-bind cho cùng số.
+
+→ **create phải enforce phone-uniqueness ATOMIC** (unique constraint trên phone ở
+customer-service; create fail nếu customer cho số đó vừa xuất hiện). `resolve='none'` chỉ là
+**gợi ý nhánh**, không là điều kiện an toàn — create tự **fail-closed** nếu số đã tồn tại.
+BFF không được assume "resolve nói none thì create an toàn".
+
+### 3.2 resolve-authoritative — giả định an toàn nặng nhất (cần confirm độc lập)
+Tách khỏi flow vì nó là giả định sống còn, không phụ thuộc nuốt:
+
+> **Team customer-service phải confirm resolve/phone là authoritative + complete.**
+
+Hướng nguy hiểm cần nhấn: **resolve false-negative** (bỏ sót khách đang tồn tại) = **lỗ bảo
+mật** → nhánh create tạo duplicate + auto-bind = porting-bypass. resolve **false-positive**
+(match nhầm khách mới vào record người khác) = **chỉ UX dead-end** (challenge fail, fail-
+closed, không lộ data). Hướng phải canh là **false-negative**. Đối chiếu: §6 mục 2.
 
 ---
 
@@ -127,6 +157,11 @@ Downstream **verify scope** trên mỗi call:
   không phải query param.
 
 Mock không enforce downstream; structural khi BFF ký đúng scope, enforce khi wire live.
+
+**Token phải short-lived + audience-scoped per downstream service**: claim `aud` theo từng
+service (billing ≠ meter ≠ customer-service); một token ký cho billing không dùng lại được
+ở meter. Mục đích: rò một service-token không thành chìa vạn năng — mỗi service chỉ chấp
+nhận token có `aud` của mình, TTL ngắn.
 
 ---
 
@@ -154,12 +189,13 @@ xanh (a+b). Mỗi data port chỉ trỏ thật khi port đó xanh (a). BFF flip 
 ## 6. Chúng tôi cần gì từ team downstream
 
 1. **B5** — secretType verify được gì? (1 câu chặn, quyết định §3 + A1 factor).
-2. **resolve completeness** — confirm resolve/phone là authoritative, không false-negative (giả định sống còn §3/§4).
-3. **Ownership enforcement** — mỗi data port scope customerId + 404-no-oracle (§1, §0.3). **403 bị cấm** cho record-scoped (403-vs-404 = enumerate oracle).
-4. **Key-mapping (§1.1)** — mỗi port chốt: tự resolve customerId→khóa nội bộ, hay getProfile trả khóa.
-5. **reporter-PII confirm** — Phản ánh per-customer (reporter PII)? incident area-shared (không PII)? (§1 note). Chủ dữ liệu incident/Phản ánh xác nhận.
-6. **JWT scope verify** — accept BFF service JWT (JWKS/mTLS, không Keycloak), verify scope (§4).
-7. **Leaf** — endpoint không gọi ngược vào BFF nào (chống loop).
+2. **resolve completeness (§3.2)** — confirm resolve/phone authoritative, **KHÔNG false-negative** (bỏ sót khách đang tồn tại = **lỗ bảo mật** → create duplicate + auto-bind = bypass). Hướng nguy hiểm là false-negative; false-positive chỉ là UX dead-end. Confirm độc lập — giả định sống còn.
+3. **Atomic phone-unique create (§3.1)** — customer-service enforce unique constraint trên phone; create **fail-closed** nếu số đã tồn tại (TOCTOU). `resolve='none'` là gợi ý nhánh, không là điều kiện an toàn.
+4. **Ownership enforcement** — mỗi data port scope customerId + 404-no-oracle ở **status / body / TIMING** (§0.3). **403 bị cấm** record-scoped (403-vs-404 = enumerate oracle). **Bao gồm payment + debt** (financial IDOR): payment.create phải verify invoice đích thuộc customerId trước khi tạo QR/thanh toán.
+5. **Key-mapping (§1.1)** — mỗi port chốt: tự resolve customerId→khóa nội bộ, hay getProfile trả khóa.
+6. **PII classification (§1 note)** — per-customer vs broadcast: Phản ánh (reporter), payment/debt, notification cá nhân = **per-customer**; incident, notification vùng = **broadcast**. Chủ dữ liệu từng service confirm.
+7. **JWT scope verify (§4)** — accept service JWT (JWKS/mTLS, không Keycloak), verify scope + **audience per service + short-lived**.
+8. **Leaf** — endpoint không gọi ngược vào BFF nào (chống loop).
 
 ---
 
