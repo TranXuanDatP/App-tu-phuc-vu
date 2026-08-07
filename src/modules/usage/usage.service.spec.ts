@@ -223,8 +223,9 @@ describe('UsageService', () => {
 
     it('calls smart-meter/get-meter-status with meterId and returns data', async () => {
       portRegistry.execute.mockResolvedValue({ data: status });
-      const result = await service.getMeterStatus('MTR-1');
+      const result = await service.getMeterStatus('QN-0912345', 'MTR-1');
       expect(portRegistry.execute).toHaveBeenCalledWith('smart-meter', 'get-meter-status', {
+        customerId: 'QN-0912345',
         meterId: 'MTR-1',
       });
       expect(result).toEqual(status);
@@ -232,7 +233,7 @@ describe('UsageService', () => {
 
     it('throws PortFallbackException when result.data is null', async () => {
       portRegistry.execute.mockResolvedValue({ data: null });
-      await expect(service.getMeterStatus('MTR-1')).rejects.toThrow(PortFallbackException);
+      await expect(service.getMeterStatus('QN-0912345', 'MTR-1')).rejects.toThrow(PortFallbackException);
     });
   });
 

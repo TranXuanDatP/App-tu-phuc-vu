@@ -86,7 +86,7 @@ export class SmartMeterController {
 
   @Get(':meterId/status')
   @ApiOperation({ summary: 'Get smart meter device status (online + battery)' })
-  getMeterStatus(@Param('meterId') meterId: string) {
-    return this.usageService.getMeterStatus(meterId);
+  getMeterStatus(@CustomerId() customerId: string, @Param('meterId') meterId: string) {
+    return this.usageService.getMeterStatus(customerId, meterId);
   }
 }

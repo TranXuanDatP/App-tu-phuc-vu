@@ -127,8 +127,8 @@ describe('SmartMeterController', () => {
       lastSeenAt: '2026-07-07T07:55:00Z',
     };
     service.getMeterStatus.mockResolvedValue(status);
-    const result = await controller.getMeterStatus('MTR-2024-0001');
-    expect(service.getMeterStatus).toHaveBeenCalledWith('MTR-2024-0001');
+    const result = await controller.getMeterStatus('QN-0912345', 'MTR-2024-0001');
+    expect(service.getMeterStatus).toHaveBeenCalledWith('QN-0912345', 'MTR-2024-0001');
     expect(result).toEqual(status);
   });
 });

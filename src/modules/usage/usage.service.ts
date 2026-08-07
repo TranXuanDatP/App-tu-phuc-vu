@@ -129,11 +129,11 @@ export class UsageService {
     return r.data;
   }
 
-  async getMeterStatus(meterId: string): Promise<SmartMeterStatus> {
+  async getMeterStatus(customerId: string, meterId: string): Promise<SmartMeterStatus> {
     const r = await this.portRegistry.execute<SmartMeterStatus>(
       'smart-meter',
       'get-meter-status',
-      { meterId },
+      { customerId, meterId },
     );
     if (!r?.data) throw new PortFallbackException('smart-meter');
     return r.data;
