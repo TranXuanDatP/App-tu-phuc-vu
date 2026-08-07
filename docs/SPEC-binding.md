@@ -171,9 +171,10 @@ contract API.
 
 ## 6. Giới hạn cứng + điều kiện go-live (đỏ)
 
-- **A2 Layer-2 trên meter/contract/Phản ánh ✅ đóng** (IDOR). Còn sub-paths same-pattern
-  (follow-up): econtract dossier (get/sign theo dossierId), smart-meter status (meterId),
-  meter-reading consumption/reading (customer-scoped, mềm hơn). Bản tham chiếu `MockInvoiceAdapter`.
+- **A2 Layer-2 selector-IDOR ✅ đóng hết** (invoice, meter, contract, Phản ánh, econtract
+  dossier, smart-meter status) — mỗi port owner-scoped + IDOR test. Customer-scoped reads
+  (list/consumption/realtime) scope theo customerId downstream lúc live (SPEC-downstream §1),
+  không có selector cross-customer → không phải class IDOR. Bản tham chiếu `MockInvoiceAdapter`.
 - ~~Register-flow gãy~~ → **đã sửa** (§4, commit `b6f5f3e`).
 
 **Điều kiện go-live cứng:** `CUSTOMER_SERVICE_URL` không trỏ data thật cho đến khi:
