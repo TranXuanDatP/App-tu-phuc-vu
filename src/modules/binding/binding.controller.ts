@@ -17,6 +17,10 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { CurrentUser } from '@modules/auth/infrastructure/decorators/current-user.decorator';
 import { ValidationException } from '@core/common';
+import {
+  RegisterSchema,
+  SwaggerRegisterDto,
+} from '@modules/auth/application/dtos/register.dto';
 import { BindingService } from './binding.service';
 import { BindSchema } from './dto/bind.dto';
 
@@ -81,6 +85,39 @@ export class BindingController {
       userId,
       sessionId,
       parsed.data,
+      deviceHeader ?? null,
+    );
+  }
+
+  /**
+   * POST /auth/register
+   * NEW-CUSTOMER branch of the unified bind flow (resolve-gated, SPEC-binding §4). Called
+   * when bind-init resolve returned 'none'. Creates Customer 360 + auto verified binding
+   * (creation = proof). TWO reject points: (1) re-resolve finds existing → 409 reroute
+   * bind; (2) create conflict (race tail) → 409 reroute bind, never auto-bind.
+   */
+  @Post('register')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Register new customer + bind (new-customer branch, resolve-gated)' })
+  @ApiBody({ type: SwaggerRegisterDto })
+  @ApiResponse({ status: 200, description: '{bound:boolean, customerId?:string}' })
+  @ApiResponse({ status: 409, description: 'CUSTOMER_EXISTS_USE_BIND — use /auth/bind instead' })
+  async register(
+    @CurrentUser('id') userId: string,
+    @CurrentUser('sessionId') sessionId: string,
+    @Body() body: unknown,
+    @Headers('x-device-id') deviceHeader?: string,
+  ) {
+    const parsed = RegisterSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationException(parsed.error.message);
+    }
+    const { fullName, classification, address, email } = parsed.data;
+    return this.bindingService.bindRegister(
+      userId,
+      sessionId,
+      { fullName, classification, address, email: email ?? null },
       deviceHeader ?? null,
     );
   }

@@ -24,6 +24,7 @@ import {
 } from '@core/constants/tokens';
 import type { ICacheService } from '@core';
 import { ValidationException } from '@core/common';
+import { ConflictException } from '@core/common';
 import { PII_ENCRYPTION_SERVICE_TOKEN } from '@modules/auth/constants/tokens';
 import { PiiEncryptionService } from '@modules/auth/infrastructure/persistence/encryption/pii-encryption.service';
 import { usersTable } from '@modules/auth/infrastructure/persistence/drizzle/schema/user.schema';
@@ -32,6 +33,7 @@ import {
 } from '@modules/account/clients/customer-service.client';
 import type {
   CustomerServiceClient,
+  CreateCustomerRequest,
   ResolveResult,
 } from '@modules/account/clients/customer-service.client';
 import { customerBindingsTable } from './infrastructure/persistence/drizzle/schema/binding.schema';
@@ -171,6 +173,88 @@ export class BindingService {
       `binding verified: user=${userId} customerRef=${body.customerRef} customerId=${profile.customerId}`,
     );
     return { bound: true, customerId: profile.customerId };
+  }
+
+  /**
+   * POST /auth/register — the NEW-CUSTOMER branch of the unified bind flow (resolve-gated).
+   * Used when bind-init resolve returned 'none'. Two reject points (SPEC-binding §4):
+   *   1. re-resolve (early, best-effort): if the phone now resolves to an existing customer
+   *      → 409, reroute to the challenge branch.
+   *   2. create (race tail, the real gate): customer-service enforces atomic phone-uniqueness;
+   *      if the phone just appeared → Conflict → 409, reroute, NEVER auto-bind.
+   * On success: create Customer 360 + insert a verified binding (creation = proof) + warm cache.
+   */
+  async bindRegister(
+    userId: string,
+    sessionId: string,
+    profile: CreateCustomerRequest,
+    deviceInfo: string | null,
+  ): Promise<BindResult> {
+    const phone = await this.getSessionPhone(userId);
+    if (!phone) {
+      throw new ValidationException(
+        'Không có số điện thoại đã xác thực trên phiên để đăng ký.',
+      );
+    }
+
+    // Reject point 1 — re-resolve server-side (do NOT trust a stale bind-init 'none').
+    const resolve = await this.customerService.resolve(phone);
+    if (resolve.status !== 'none') {
+      throw new ConflictException(
+        'Khách hàng đã tồn tại cho số này — dùng luồng liên kết (bind), không đăng ký mới.',
+        'CUSTOMER_EXISTS_USE_BIND',
+        { status: resolve.status },
+      );
+    }
+
+    // Reject point 2 — create with atomic phone-uniqueness (the race gate). Reroute on conflict.
+    let created;
+    try {
+      created = await this.customerService.create(phone, profile);
+    } catch (err) {
+      if (err instanceof ConflictException) {
+        this.logger.warn(
+          `bindRegister: create conflict (race tail) for user ${userId} → reroute bind`,
+        );
+        throw new ConflictException(
+          'Khách hàng vừa được tạo cho số này — dùng luồng liên kết (bind).',
+          'CUSTOMER_EXISTS_USE_BIND',
+        );
+      }
+      throw err;
+    }
+
+    // Success → insert verified binding (creation = proof) + warm cache.
+    const encCustomerId = this.pii.encryptIfNeeded(created.customerId);
+    const now = new Date();
+    await this.upsertVerified({
+      userId,
+      customerRef: created.customerRef,
+      encCustomerId,
+      factorUsed: 'self_registration',
+      deviceInfo,
+      now,
+    });
+    await this.cache.delete(this.initKey(sessionId)); // consume any pending init token
+    await this.cache
+      .set(
+        this.bindKey(userId),
+        {
+          customerIdCipher: encCustomerId,
+          customerRef: created.customerRef,
+          verifiedAt: now,
+          deviceInfo,
+        },
+        this.BINDING_CACHE_TTL_SEC,
+      )
+      .catch((err: unknown) => {
+        this.logger.warn(`failed to warm binding cache: ${(err as Error).message}`);
+      });
+
+    this.logger.log(
+      `bindRegister: created+bound user=${userId} customer=${created.customerId} (${created.customerRef})`,
+    );
+    return { bound: true, customerId: created.customerId };
   }
 
   // ── helpers ────────────────────────────────────────────────────────────────

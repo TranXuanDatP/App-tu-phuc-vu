@@ -52,44 +52,10 @@ describe('Auth Contract Tests', () => {
     mockPortRegistry = { execute: jest.fn() };
   });
 
-  // ── POST /auth/register ──────────────────────────────────────────────────
-
-  describe('register — contract shape', () => {
-    it('should return {ok:true, profileStatus:"complete", customerId, linked:true} on success', async () => {
-      mockDb = createMockDb({ phoneNumber: '+84901234567', profileStatus: 'incomplete' });
-      mockPortRegistry.execute.mockResolvedValue({ data: MOCK_CUSTOMER });
-
-      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
-
-      const result = await controller.register('user-1', VALID_REGISTER_BODY);
-
-      expect(result).toEqual({
-        ok: true,
-        profileStatus: 'complete',
-        customerId: 'APP-000001',
-        linked: true,
-      });
-    });
-
-    it('should throw ValidationException when user is already complete (dedup by phone)', async () => {
-      mockDb = createMockDb({ phoneNumber: '+84901234567', profileStatus: 'complete' });
-
-      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
-
-      await expect(controller.register('user-1', VALID_REGISTER_BODY)).rejects.toThrow(
-        ValidationException,
-      );
-    });
-
-    it('should throw ValidationException on invalid body (missing required fields)', async () => {
-      mockDb = createMockDb(null);
-      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
-
-      await expect(controller.register('user-1', { fullName: 'X' })).rejects.toThrow(
-        ValidationException,
-      );
-    });
-  });
+  // NOTE: POST /auth/register moved to BindingController (register = new-customer branch
+  // of the unified bind flow, resolve-gated — SPEC-binding §4). Its contract is now tested
+  // in test/integration/binding-register.spec.ts (bindRegister: two reject points + create+bind).
+  // AuthController no longer has a register() method.
 
   // ── POST /auth/check-registration ───────────────────────────────────────
 

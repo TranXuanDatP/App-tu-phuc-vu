@@ -18,9 +18,12 @@
  * server-side only.
  */
 import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException } from '@core/common';
 import type { CustomerProfileResponse } from '../dto/customer-profile.dto';
 import type {
   CustomerServiceClient,
+  CreateCustomerRequest,
+  CreateCustomerResult,
   ResolveResult,
   VerifyRequest,
   VerifyResult,
@@ -107,13 +110,22 @@ const SEED_CUSTOMERS: SeedCustomer[] = [
   },
 ];
 
+// Module-level counter for customers created via the new-customer branch (register→bind).
+let createdCustomerCounter = 0;
+
 @Injectable()
 export class MockCustomerServiceClient implements CustomerServiceClient {
   private readonly logger = new Logger(MockCustomerServiceClient.name);
+  /** normalized phone → seed-shaped record, for customers created via create(). */
+  private readonly createdCustomers = new Map<string, SeedCustomer>();
 
   async resolve(phone: string): Promise<ResolveResult> {
     const norm = this.normalizePhone(phone);
-    const matches = SEED_CUSTOMERS.filter((c) => c.phone === norm);
+    // Created customers first (so resolve sees them after a create in the same process).
+    const created = Array.from(this.createdCustomers.values()).filter(
+      (c) => c.phone === norm,
+    );
+    const matches = [...created, ...SEED_CUSTOMERS.filter((c) => c.phone === norm)];
 
     if (matches.length === 0) {
       // Identical response every time — no enumeration signal.
@@ -131,6 +143,55 @@ export class MockCustomerServiceClient implements CustomerServiceClient {
         maskedHint: this.hint(c),
       })),
     };
+  }
+
+  /**
+   * create() — new-customer branch. ATOMIC phone-uniqueness (reject point 2, the race
+   * gate): if a customer for this phone already exists (seed OR previously created in
+   * this process), throw ConflictException → BFF reroutes to challenge, NEVER auto-binds.
+   * Created customers are visible to resolve() thereafter.
+   */
+  async create(
+    phone: string,
+    profile: CreateCustomerRequest,
+  ): Promise<CreateCustomerResult> {
+    const norm = this.normalizePhone(phone);
+    const exists =
+      this.createdCustomers.has(norm) ||
+      SEED_CUSTOMERS.some((c) => c.phone === norm);
+    if (exists) {
+      // Race tail (or seed): customer for this phone is now present. Fail-closed.
+      throw new ConflictException(
+        'A customer for this phone already exists',
+        'CUSTOMER_PHONE_EXISTS',
+        { phone: norm },
+      );
+    }
+
+    createdCustomerCounter += 1;
+    const n = String(createdCustomerCounter).padStart(6, '0');
+    const customerRef = `REF-NEW-${n}`;
+    const customerId = `APP-${n}`;
+    const fullAddress = `${profile.address.street}, ${profile.address.ward}, ${profile.address.district}, ${profile.address.city}`;
+    const record: SeedCustomer = {
+      customerRef,
+      fullName: profile.fullName,
+      phone: norm,
+      customerId,
+      classification: profile.classification,
+      lastInvoiceAmount: '', // no bill-secret for a brand-new customer (creation = proof)
+      addressPrefix: `${profile.address.street}, ${profile.address.district}`,
+      fullAddress: {
+        street: profile.address.street,
+        ward: profile.address.ward,
+        district: profile.address.district,
+        city: profile.address.city,
+        fullAddress,
+      },
+    };
+    this.createdCustomers.set(norm, record);
+    this.logger.log(`Mock create → ${customerId} (${customerRef}, ${profile.fullName})`);
+    return { customerId, customerRef };
   }
 
   async verify(req: VerifyRequest): Promise<VerifyResult> {

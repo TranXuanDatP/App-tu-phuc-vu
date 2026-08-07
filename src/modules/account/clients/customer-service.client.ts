@@ -43,6 +43,19 @@ export interface VerifyResult {
   verified: boolean;
 }
 
+/** Profile fields for create() — the new-customer branch of the unified bind flow. */
+export interface CreateCustomerRequest {
+  fullName: string;
+  classification: 'sinh_hoat' | 'san_xuat' | 'hanh_chinh';
+  address: { street: string; ward: string; district: string; city: string };
+  email?: string | null;
+}
+
+export interface CreateCustomerResult {
+  customerId: string; // real Customer 360 id (gets encrypted into the binding row)
+  customerRef: string; // opaque ref for the binding row
+}
+
 export interface CustomerServiceClient {
   /**
    * phone → { none | one | many }.
@@ -57,6 +70,15 @@ export interface CustomerServiceClient {
    * secret value.
    */
   verify(req: VerifyRequest): Promise<VerifyResult>;
+
+  /**
+   * Create a NEW Customer 360 for a phone proven (by resolve) to not exist.
+   * **ATOMIC phone-uniqueness** (SPEC-binding §4 / downstream §3.1): if a customer for
+   * this phone already exists (race tail — appeared between resolve and create), throw
+   * ConflictException → BFF reroutes to the challenge branch, NEVER auto-binds. phone is
+   * the OTP-verified session phone (server-side). This is reject point 2 (the real race gate).
+   */
+  create(phone: string, profile: CreateCustomerRequest): Promise<CreateCustomerResult>;
 
   /**
    * Full Customer 360 profile. Callable ONLY after a verified binding — the BFF
