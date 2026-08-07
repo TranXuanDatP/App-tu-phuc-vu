@@ -150,7 +150,7 @@ export class BindingService {
     await this.rateLimiter.clearFailures(userId, body.customerRef);
     await this.cache.delete(this.initKey(sessionId)); // single-use token
 
-    // Warm the guard's binding cache so the next @RequiresBinding request is a cache HIT.
+    // Warm the guard's binding cache so the next customer-data request is a cache HIT.
     // Store CIPHERTEXT only (A2 D3 / redline #1) — the guard decrypts per-request.
     await this.cache
       .set(

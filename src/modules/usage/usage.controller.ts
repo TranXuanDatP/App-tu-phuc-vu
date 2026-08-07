@@ -6,12 +6,10 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CustomerId } from '../binding/decorators/current-customer.decorator';
-import { RequiresBinding } from '../binding/decorators/requires-binding.decorator';
 import { UsageService } from './usage.service';
 
 @ApiTags('Meter')
 @ApiBearerAuth('JWT-auth')
-@RequiresBinding()
 @Controller('meters')
 export class UsageController {
   constructor(private readonly usageService: UsageService) {}
@@ -73,7 +71,6 @@ export class UsageController {
  */
 @ApiTags('Smart Meter')
 @ApiBearerAuth('JWT-auth')
-@RequiresBinding()
 @Controller('smart-meter')
 export class SmartMeterController {
   constructor(private readonly usageService: UsageService) {}

@@ -14,33 +14,31 @@
  */
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { CurrentUser } from '@modules/auth/infrastructure/decorators/current-user.decorator';
-import { RequiresBinding } from '../binding/decorators/requires-binding.decorator';
+import { CustomerId } from '../binding/decorators/current-customer.decorator';
 import { NotificationService } from './notification.service';
 
 @ApiTags('Notifications')
 @ApiBearerAuth('JWT-auth')
-@RequiresBinding()
 @Controller('notifications')
 export class NotificationController {
   constructor(private readonly notificationService: NotificationService) {}
 
   @Get('preferences')
   @ApiOperation({ summary: 'Get notification preferences' })
-  getPreferences(@CurrentUser('id') userId: string) {
-    return this.notificationService.getPreferences(userId);
+  getPreferences(@CustomerId() customerId: string) {
+    return this.notificationService.getPreferences(customerId);
   }
 
   @Patch('preferences')
   @ApiOperation({ summary: 'Update notification preferences' })
-  updatePreferences(@CurrentUser('id') userId: string, @Body() body: unknown) {
-    return this.notificationService.updatePreferences(userId, body);
+  updatePreferences(@CustomerId() customerId: string, @Body() body: unknown) {
+    return this.notificationService.updatePreferences(customerId, body);
   }
 
   @Get('history')
   @ApiOperation({ summary: 'Get notification history' })
-  getHistory(@CurrentUser('id') userId: string, @Query() query: Record<string, unknown>) {
-    return this.notificationService.getHistory(userId, query);
+  getHistory(@CustomerId() customerId: string, @Query() query: Record<string, unknown>) {
+    return this.notificationService.getHistory(customerId, query);
   }
 
   @Get('cutoff-schedule/:areaId')
@@ -52,29 +50,28 @@ export class NotificationController {
 
 @ApiTags('Proactive Alerts')
 @ApiBearerAuth('JWT-auth')
-@RequiresBinding()
 @Controller('proactive-notifications')
 export class ProactiveNotificationController {
   constructor(private readonly notificationService: NotificationService) {}
 
   @Get('active')
   @ApiOperation({ summary: 'Get active alerts for customer area' })
-  getActiveAlerts(@CurrentUser('id') userId: string) {
-    return this.notificationService.getActiveAlerts(userId);
+  getActiveAlerts(@CustomerId() customerId: string) {
+    return this.notificationService.getActiveAlerts(customerId);
   }
 
   @Get('history')
   @ApiOperation({ summary: 'Get alert history' })
-  getAlertHistory(@CurrentUser('id') userId: string, @Query() query: Record<string, unknown>) {
-    return this.notificationService.getAlertHistory(userId, query);
+  getAlertHistory(@CustomerId() customerId: string, @Query() query: Record<string, unknown>) {
+    return this.notificationService.getAlertHistory(customerId, query);
   }
 
   @Post(':alertId/acknowledge')
   @ApiOperation({ summary: 'Acknowledge an alert' })
   acknowledgeAlert(
-    @CurrentUser('id') userId: string,
+    @CustomerId() customerId: string,
     @Param() params: Record<string, string>,
   ) {
-    return this.notificationService.acknowledgeAlert(params.alertId, userId);
+    return this.notificationService.acknowledgeAlert(params.alertId, customerId);
   }
 }

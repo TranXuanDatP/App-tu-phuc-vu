@@ -8,12 +8,10 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CustomerId } from '../binding/decorators/current-customer.decorator';
-import { RequiresBinding } from '../binding/decorators/requires-binding.decorator';
 import { ReportService } from './report.service';
 
 @ApiTags('Incident')
 @ApiBearerAuth('JWT-auth')
-@RequiresBinding()
 @Controller('incidents')
 export class ReportController {
   constructor(private readonly reportService: ReportService) {}

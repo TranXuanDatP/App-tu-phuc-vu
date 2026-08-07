@@ -8,7 +8,6 @@ import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CustomerId } from '../binding/decorators/current-customer.decorator';
 import { Public } from '@modules/auth/infrastructure/decorators/public.decorator';
-import { RequiresBinding } from '../binding/decorators/requires-binding.decorator';
 import { InterServiceApiKeyGuard } from '@shared/security';
 import { PaymentService } from './payment.service';
 
@@ -18,7 +17,6 @@ import { PaymentService } from './payment.service';
 
 @ApiTags('Payment')
 @ApiBearerAuth('JWT-auth')
-@RequiresBinding()
 @Controller('payments')
 export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}
@@ -82,7 +80,6 @@ export class PaymentController {
 
 @ApiTags('Payment — Debt')
 @ApiBearerAuth('JWT-auth')
-@RequiresBinding()
 @Controller('payments/debt')
 export class DebtController {
   constructor(private readonly paymentService: PaymentService) {}

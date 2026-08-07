@@ -1,7 +1,7 @@
 /**
  * BindingVerifiedGuard
  *
- * Global NestJS guard (APP_GUARD). On @RequiresBinding() routes it:
+ * Global NestJS guard (APP_GUARD). On customer-data routes (default-deny) it:
  *   1. resolves the user's VERIFIED binding (cache `bind:{userId}` FIRST, DB fallback),
  *   2. decrypts the customerId PER-REQUEST in memory (cache holds CIPHERTEXT only —
  *      never plaintext, so a Redis dump leaks no more than the encrypted DB column),
@@ -13,8 +13,9 @@
  * `request.customer.customerId` is the BOUND customer — handlers read it via
  * @CustomerId(); it NEVER comes from the client (A2 IDOR fix, SPEC-A2 §D2).
  *
- * Opt-in enforcement: only @RequiresBinding() routes are checked. Order-agnostic vs
- * SessionAuthGuard — if no `request.user` yet we DEFER (return true) and let auth own 401.
+ * OPT-OUT enforcement: every authenticated route requires a binding unless marked
+ * @SkipBindingVerified() (auth/onboarding/session/support) or @Public (no user → defer).
+ * Forgetting a decorator on a NEW customer-data route is SAFE — it defaults to deny.
  */
 import {
   Injectable,
@@ -34,7 +35,7 @@ import type { ICacheService } from '@core';
 import { PII_ENCRYPTION_SERVICE_TOKEN } from '@modules/auth/constants/tokens';
 import { PiiEncryptionService } from '@modules/auth/infrastructure/persistence/encryption/pii-encryption.service';
 import { customerBindingsTable } from '../infrastructure/persistence/drizzle/schema/binding.schema';
-import { REQUIRES_BINDING_KEY } from '../decorators/requires-binding.decorator';
+import { SKIP_BINDING_VERIFIED_KEY } from '../decorators/skip-binding-verified.decorator';
 
 /** The bound customer attached to request.customer by this guard. */
 export interface BoundCustomer {
@@ -73,21 +74,23 @@ export class BindingVerifiedGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const requiresBinding = this.reflector.getAllAndOverride<boolean>(
-      REQUIRES_BINDING_KEY,
-      [context.getHandler(), context.getClass()],
-    );
-    if (!requiresBinding) return true; // opt-in: only enforce where declared
-
     const request = context.switchToHttp().getRequest<{
       user?: { id?: string };
       customer?: BoundCustomer;
     }>();
     const userId = request?.user?.id;
     if (!userId) {
-      // No authenticated identity yet — defer to SessionAuthGuard (it will 401).
+      // No authenticated identity (e.g. @Public reached here) — defer to SessionAuthGuard
+      // (it owns 401 for unauthenticated; @Public routes have no user so they pass).
       return true;
     }
+
+    // OPT-OUT: deny every authenticated route by default; only skip where marked.
+    const skip = this.reflector.getAllAndOverride<boolean>(
+      SKIP_BINDING_VERIFIED_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (skip) return true; // @SkipBindingVerified — authenticated, not customer-data
 
     const entry = await this.resolveBinding(userId);
     if (!entry) {

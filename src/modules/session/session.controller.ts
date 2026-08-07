@@ -8,6 +8,7 @@
  *
  * ⚠️ Route ordering: GET /me and GET /me/events MUST come BEFORE any :id routes.
  */
+import { SkipBindingVerified } from '@modules/binding/decorators/skip-binding-verified.decorator';
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { CurrentUser } from '@modules/auth/infrastructure/decorators/current-user.decorator';
@@ -15,6 +16,7 @@ import { SessionService } from './session.service';
 
 @ApiTags('Sessions')
 @ApiBearerAuth('JWT-auth')
+@SkipBindingVerified()
 @Controller('sessions')
 export class SessionController {
   constructor(private readonly sessionService: SessionService) {}

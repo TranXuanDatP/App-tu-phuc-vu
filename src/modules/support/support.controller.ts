@@ -2,6 +2,7 @@
  * Support controller — REST endpoints for call center (route prefix /call-center
  * preserved for FE contract). Thin: route + auth → delegates to SupportService.
  */
+import { SkipBindingVerified } from '@modules/binding/decorators/skip-binding-verified.decorator';
 import { Body, Controller, Get, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@modules/auth/infrastructure/decorators/current-user.decorator';
@@ -9,6 +10,7 @@ import { SupportService } from './support.service';
 
 @ApiTags('Call Center')
 @ApiBearerAuth('JWT-auth')
+@SkipBindingVerified()
 @Controller('call-center')
 export class SupportController {
   constructor(private readonly supportService: SupportService) {}

@@ -2,16 +2,15 @@
  * Account controller — REST endpoints for customer profile (route prefix /customers
  * preserved for FE contract). Thin: route + auth → delegates to AccountService.
  */
+import { SkipBindingVerified } from '@modules/binding/decorators/skip-binding-verified.decorator';
 import { Body, Controller, Get, Param, Post, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@modules/auth/infrastructure/decorators/current-user.decorator';
 import { CustomerId } from '../binding/decorators/current-customer.decorator';
-import { RequiresBinding } from '../binding/decorators/requires-binding.decorator';
 import { AccountService } from './account.service';
 
 @ApiTags('Customer')
 @ApiBearerAuth('JWT-auth')
-@RequiresBinding()
 @Controller('customers')
 export class AccountController {
   constructor(private readonly accountService: AccountService) {}
@@ -48,6 +47,7 @@ export class AccountController {
  */
 @ApiTags('Onboarding')
 @ApiBearerAuth('JWT-auth')
+@SkipBindingVerified()
 @Controller('onboarding')
 export class OnboardingController {
   constructor(private readonly accountService: AccountService) {}

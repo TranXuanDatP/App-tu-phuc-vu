@@ -2,7 +2,7 @@
  * BindingController — bind-init / bind endpoints (A1.3).
  *
  * Mounted at /auth so the mobile hits POST /auth/bind-init and POST /auth/bind (per
- * SPEC-A4-A1 §A1.3). Authenticated (SessionAuthGuard), but NOT @RequiresBinding —
+ * SPEC-A4-A1 §A1.3). Authenticated (SessionAuthGuard), @SkipBindingVerified (the binding flow itself — reachable pre-binding) —
  * binding is exactly how you GET a verified binding, so it must be reachable before one
  * exists. The session-scoping + foreign-ref rejection lives in BindingService (Fix 1).
  */
@@ -14,6 +14,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { SkipBindingVerified } from '@modules/binding/decorators/skip-binding-verified.decorator';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { CurrentUser } from '@modules/auth/infrastructure/decorators/current-user.decorator';
 import { ValidationException } from '@core/common';
@@ -26,6 +27,7 @@ import { BindSchema } from './dto/bind.dto';
 
 @ApiTags('Auth')
 @ApiBearerAuth('JWT-auth')
+@SkipBindingVerified()
 @Controller('auth')
 export class BindingController {
   constructor(private readonly bindingService: BindingService) {}
