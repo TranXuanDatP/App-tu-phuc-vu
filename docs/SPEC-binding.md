@@ -32,13 +32,14 @@ vẫn 403 ở cổng data. **Nguyên tắc "guard đọc đúng nguồn" giữ c
 | A2 Layer-1: billing/account/usage/payment → `@CustomerId()` | ✅ xong | `5cb2ff5` |
 | A2 Layer-2: invoice owner-scoped mock + IDOR test | ✅ xong | `5cb2ff5` |
 | register→bind hợp nhất (resolve-gated, hai điểm reject) | ✅ xong | `b6f5f3e` |
-| A2 Layer-2: meter / contract / Phản ánh (same invoice pattern) | ⏸ pause — **IDOR còn mở ở 3 port** |
+| A2 Layer-2: meter / contract / Phản ánh (same invoice pattern) | ✅ xong (IDOR đóng 3 port) |
 | single-source repoint + mobile additive sync | ⏸ pause (§5) |
 | JWT scope split + guard opt-in→opt-out | ⏸ pause |
 | A1.5 audit / A1.6 re-verify | ⏸ pause |
 
-612 jest xanh; tsc sạch; migration 0006 đã apply thật. **"612 xanh" ≠ binding xong** — IDOR
-vẫn mở ở 3 port (meter/contract/Phản ánh).
+630 jest xanh; tsc sạch; migration 0006 đã apply thật. **IDOR đóng trên invoice + meter +
+contract + Phản ánh** (Layer-2). Còn sub-paths same-pattern (econtract/smart-meter/meter-reading)
++ single-source (§5) — chưa xong.
 
 ---
 
@@ -170,8 +171,9 @@ contract API.
 
 ## 6. Giới hạn cứng + điều kiện go-live (đỏ)
 
-- **A2 CHƯA xong** — mới invoice đóng Layer-2. Đỏ tới khi Layer-2 đóng trên
-  meter/contract/Phản ánh (same invoice pattern — bản tham chiếu `MockInvoiceAdapter`).
+- **A2 Layer-2 trên meter/contract/Phản ánh ✅ đóng** (IDOR). Còn sub-paths same-pattern
+  (follow-up): econtract dossier (get/sign theo dossierId), smart-meter status (meterId),
+  meter-reading consumption/reading (customer-scoped, mềm hơn). Bản tham chiếu `MockInvoiceAdapter`.
 - ~~Register-flow gãy~~ → **đã sửa** (§4, commit `b6f5f3e`).
 
 **Điều kiện go-live cứng:** `CUSTOMER_SERVICE_URL` không trỏ data thật cho đến khi:

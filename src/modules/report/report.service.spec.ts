@@ -185,8 +185,9 @@ describe('ReportService', () => {
     it('calls incident/get-report-detail and returns data', async () => {
       const detail = { reportId: 'SC-1' };
       portRegistry.execute.mockResolvedValue({ data: detail });
-      const result = await service.getReportDetail('SC-1');
+      const result = await service.getReportDetail('QN-0912345', 'SC-1');
       expect(portRegistry.execute).toHaveBeenCalledWith('incident', 'get-report-detail', {
+        customerId: 'QN-0912345',
         reportId: 'SC-1',
       });
       expect(result).toEqual(detail);

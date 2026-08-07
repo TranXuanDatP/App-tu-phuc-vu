@@ -6,7 +6,7 @@
  */
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { CurrentUser } from '@modules/auth/infrastructure/decorators/current-user.decorator';
+import { CustomerId } from '../binding/decorators/current-customer.decorator';
 import { RequiresBinding } from '../binding/decorators/requires-binding.decorator';
 import { ServiceRequestService } from './service-request.service';
 
@@ -27,8 +27,8 @@ export class ContractController {
    */
   @Get()
   @ApiOperation({ summary: 'Get customer contracts' })
-  getContracts(@CurrentUser('id') userId: string, @Query() query: unknown) {
-    return this.serviceRequestService.getContracts(userId, query);
+  getContracts(@CustomerId() customerId: string, @Query() query: unknown) {
+    return this.serviceRequestService.getContracts(customerId, query);
   }
 
   /**
@@ -38,10 +38,10 @@ export class ContractController {
   @Get(':contractId')
   @ApiOperation({ summary: 'Get contract detail' })
   getContractDetail(
-    @CurrentUser('id') userId: string,
+    @CustomerId() customerId: string,
     @Param('contractId') contractId: string,
   ) {
-    return this.serviceRequestService.getContractDetail(userId, contractId);
+    return this.serviceRequestService.getContractDetail(customerId, contractId);
   }
 
   /**
@@ -51,10 +51,10 @@ export class ContractController {
   @Get(':contractId/versions')
   @ApiOperation({ summary: 'Get contract version history' })
   getContractVersions(
-    @CurrentUser('id') userId: string,
+    @CustomerId() customerId: string,
     @Param('contractId') contractId: string,
   ) {
-    return this.serviceRequestService.getContractVersions(userId, contractId);
+    return this.serviceRequestService.getContractVersions(customerId, contractId);
   }
 
   /**
@@ -64,10 +64,10 @@ export class ContractController {
   @Get(':contractId/pdf')
   @ApiOperation({ summary: 'Get contract PDF download URL' })
   getContractPDF(
-    @CurrentUser('id') userId: string,
+    @CustomerId() customerId: string,
     @Param('contractId') contractId: string,
   ) {
-    return this.serviceRequestService.getContractPDF(userId, contractId);
+    return this.serviceRequestService.getContractPDF(customerId, contractId);
   }
 }
 
@@ -87,8 +87,8 @@ export class EcontractController {
    * Get digital contract dossier
    */
   @Get(':dossierId')
-  get(@CurrentUser('id') userId: string, @Param('dossierId') dossierId: string) {
-    return this.serviceRequestService.getEcontract(userId, dossierId);
+  get(@CustomerId() customerId: string, @Param('dossierId') dossierId: string) {
+    return this.serviceRequestService.getEcontract(customerId, dossierId);
   }
 
   /**
@@ -97,10 +97,10 @@ export class EcontractController {
    */
   @Post(':dossierId/sign')
   sign(
-    @CurrentUser('id') userId: string,
+    @CustomerId() customerId: string,
     @Param('dossierId') dossierId: string,
     @Body() body: { signatureRef: string },
   ) {
-    return this.serviceRequestService.signEcontract(userId, dossierId, body);
+    return this.serviceRequestService.signEcontract(customerId, dossierId, body);
   }
 }

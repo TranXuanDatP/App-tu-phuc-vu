@@ -156,11 +156,11 @@ export class ReportService {
     return result.data;
   }
 
-  async getReportDetail(reportId: string): Promise<ReportDetail> {
+  async getReportDetail(customerId: string, reportId: string): Promise<ReportDetail> {
     const result = await this.portRegistry.execute<ReportDetail>(
       'incident',
       'get-report-detail',
-      { reportId },
+      { customerId, reportId },
     );
     return result.data;
   }

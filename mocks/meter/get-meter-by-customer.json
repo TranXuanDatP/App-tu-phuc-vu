@@ -8,7 +8,8 @@
       "accuracyClass": "Class B",
       "manufactureYear": 2023,
       "installationDate": "2023-06-15",
-      "status": "active"
+      "status": "active",
+      "ownerCustomerId": "QN-0912345"
     },
     {
       "meterId": "MT-002",
@@ -18,7 +19,8 @@
       "accuracyClass": "Class C",
       "manufactureYear": 2024,
       "installationDate": "2024-01-10",
-      "status": "active"
+      "status": "active",
+      "ownerCustomerId": "QN-0912345"
     },
     {
       "meterId": "MT-003",
@@ -28,7 +30,8 @@
       "accuracyClass": "Class C",
       "manufactureYear": 2022,
       "installationDate": "2022-03-20",
-      "status": "active"
+      "status": "active",
+      "ownerCustomerId": "QN-0888891"
     }
   ],
   "totalCount": 3

@@ -74,8 +74,8 @@ describe('ReportController', () => {
   it('reportDetail delegates reportId to service', async () => {
     const detail = { reportId: 'SC-1' };
     service.getReportDetail.mockResolvedValue(detail);
-    const result = await controller.reportDetail('SC-1');
-    expect(service.getReportDetail).toHaveBeenCalledWith('SC-1');
+    const result = await controller.reportDetail('QN-0912345', 'SC-1');
+    expect(service.getReportDetail).toHaveBeenCalledWith('QN-0912345', 'SC-1');
     expect(result).toEqual(detail);
   });
 

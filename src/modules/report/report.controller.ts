@@ -7,7 +7,7 @@
  */
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { CurrentUser } from '@modules/auth/infrastructure/decorators/current-user.decorator';
+import { CustomerId } from '../binding/decorators/current-customer.decorator';
 import { RequiresBinding } from '../binding/decorators/requires-binding.decorator';
 import { ReportService } from './report.service';
 
@@ -36,22 +36,26 @@ export class ReportController {
   }
 
   // ── Phản ánh (per-customer report, replaces ticket in app khách) ──────────
+  // Owner-scoped (A2 Layer-2): reporter = bound customerId; detail 404 for another's report.
   @Post('reports')
   @ApiOperation({ summary: 'Create customer report (Phản ánh)' })
-  createReport(@CurrentUser('id') userId: string, @Body() body: unknown) {
-    return this.reportService.createReport(userId, body);
+  createReport(@CustomerId() customerId: string, @Body() body: unknown) {
+    return this.reportService.createReport(customerId, body);
   }
 
   @Get('reports')
   @ApiOperation({ summary: 'List my reports (Phản ánh)' })
-  myReports(@CurrentUser('id') userId: string, @Query('status') status?: string) {
-    return this.reportService.getMyReports(userId, status);
+  myReports(@CustomerId() customerId: string, @Query('status') status?: string) {
+    return this.reportService.getMyReports(customerId, status);
   }
 
   @Get('reports/:reportId')
   @ApiOperation({ summary: 'Get report detail' })
-  reportDetail(@Param('reportId') reportId: string) {
-    return this.reportService.getReportDetail(reportId);
+  reportDetail(
+    @CustomerId() customerId: string,
+    @Param('reportId') reportId: string,
+  ) {
+    return this.reportService.getReportDetail(customerId, reportId);
   }
 
   @Get(':id')

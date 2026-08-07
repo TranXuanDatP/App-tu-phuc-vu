@@ -13,7 +13,8 @@
         "basePrice": 6500,
         "currency": "VND",
         "billingCycle": "monthly"
-      }
+      },
+      "ownerCustomerId": "QN-0912345"
     },
     {
       "contractId": "CTR-2023-0012",
@@ -24,7 +25,8 @@
       "status": "expired",
       "startDate": "2023-03-01",
       "endDate": "2024-02-28",
-      "pricingTerms": null
+      "pricingTerms": null,
+      "ownerCustomerId": "QN-0888891"
     }
   ],
   "totalCount": 2
