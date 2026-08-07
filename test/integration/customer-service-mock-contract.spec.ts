@@ -27,7 +27,7 @@ describe('Mock customer-service contract (A4)', () => {
     });
 
     it('1-match → {status:"one", customerRef, maskedHint} with address-based hint, no PII', async () => {
-      const r = await client.resolve('+84901234567');
+      const r = await client.resolve('+84987654321');
       expect(r.status).toBe('one');
       expect(r.customerRef).toBe('REF-001');
       expect(r.maskedHint).toMatch(/•/); // address-based separator
@@ -39,7 +39,7 @@ describe('Mock customer-service contract (A4)', () => {
     });
 
     it('N-match → {status:"many", candidates[2]} differing by address, no customerId', async () => {
-      const r = await client.resolve('+84987654321');
+      const r = await client.resolve('+849777666555');
       expect(r.status).toBe('many');
       expect(r.candidates).toHaveLength(2);
       const hints = r.candidates!.map((c) => c.maskedHint);
@@ -52,8 +52,8 @@ describe('Mock customer-service contract (A4)', () => {
     });
 
     it('accepts varied phone formats (0…/84/+) and still resolves', async () => {
-      expect((await client.resolve('0901234567')).status).toBe('one');
-      expect((await client.resolve('84901234567')).status).toBe('one');
+      expect((await client.resolve('0987654321')).status).toBe('one');
+      expect((await client.resolve('84987654321')).status).toBe('one');
     });
   });
 
@@ -127,7 +127,7 @@ describe('Mock customer-service contract (A4)', () => {
   // ── resolve/channel (omnichannel stub) ─────────────────────────────────────
   describe('resolveChannel', () => {
     it('APP reuses phone resolve; other channels → none (stub)', async () => {
-      expect((await client.resolveChannel('APP', '+84901234567')).status).toBe('one');
+      expect((await client.resolveChannel('APP', '+84987654321')).status).toBe('one');
       expect((await client.resolveChannel('ZALO', 'oa-user-1')).status).toBe('none');
     });
   });

@@ -42,12 +42,13 @@ interface SeedCustomer {
   fullAddress: CustomerProfileResponse['address'];
 }
 
-// Canonical-phone seed data. +84901234567 → '901234567', etc.
+// Canonical-phone seed data. +84987654321 → '987654321' (REF-001, the main test customer
+// with meter+invoice data); N-match test pair on '9777666555' (REF-003 + REF-004).
 const SEED_CUSTOMERS: SeedCustomer[] = [
   {
     customerRef: 'REF-001',
     fullName: 'Nguyễn Văn Nam',
-    phone: '901234567',
+    phone: '987654321',
     customerId: 'QN-0912345',
     classification: 'sinh_hoat',
     lastInvoiceAmount: '247500',
@@ -79,7 +80,7 @@ const SEED_CUSTOMERS: SeedCustomer[] = [
   {
     customerRef: 'REF-003',
     fullName: 'Lê Minh',
-    phone: '987654321',
+    phone: '9777666555',
     customerId: 'QN-0777123',
     classification: 'sinh_hoat',
     lastInvoiceAmount: '312000',
@@ -95,7 +96,7 @@ const SEED_CUSTOMERS: SeedCustomer[] = [
   {
     customerRef: 'REF-004',
     fullName: 'Lê Minh Khôi',
-    phone: '987654321',
+    phone: '9777666555',
     customerId: 'QN-0666001',
     classification: 'hanh_chinh',
     lastInvoiceAmount: '156000',

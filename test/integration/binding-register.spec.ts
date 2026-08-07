@@ -86,8 +86,8 @@ describe('BindingService.bindRegister (register→bind, resolve-gated)', () => {
   it('reject #1: re-resolve finds existing customer → 409, no create, no binding', async () => {
     const customerService = new MockCustomerServiceClient();
     const createSpy = jest.spyOn(customerService, 'create');
-    // +84901234567 resolves to seed REF-001 (status 'one')
-    const db = mockDb([[{ phoneNumber: '+84901234567' }]]);
+    // +84987654321 resolves to seed REF-001 (status 'one')
+    const db = mockDb([[{ phoneNumber: '+84987654321' }]]);
     const service = new BindingService(
       customerService as any,
       db as any,
