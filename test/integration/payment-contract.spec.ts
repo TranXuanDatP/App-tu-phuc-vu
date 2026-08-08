@@ -31,12 +31,13 @@ const mockCacheService = {
 describe('Payment Contract Tests', () => {
   let paymentService: PaymentService;
   let portRegistry: PortRegistry;
+  let configService: EndpointConfigService;
 
   beforeAll(async () => {
     process.env.BACKEND_BASE_URL = process.env.BACKEND_BASE_URL || 'http://localhost:8080';
 
     const structuredLogger = new StructuredLogger();
-    const configService = new EndpointConfigService(structuredLogger);
+    configService = new EndpointConfigService(structuredLogger);
     await configService.onModuleInit();
     const fallbackProvider = new FallbackProvider(structuredLogger);
 
@@ -60,7 +61,9 @@ describe('Payment Contract Tests', () => {
     );
   });
 
-  afterAll(async () => {});
+  afterAll(async () => {
+    await configService?.onModuleDestroy();
+  });
 
   describe('createPayment — contract shape', () => {
     it('should return {paymentId, invoiceId, amount, method, status, expiresAt, createdAt}', async () => {
