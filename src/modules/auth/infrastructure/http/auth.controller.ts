@@ -30,10 +30,12 @@ import {
 import { ValidationException } from '@core/common';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import { Public } from '../decorators/public.decorator';
-// AuthController hosts ONLY onboarding/identity routes (post-OTP routing, provider
-// linking) — none are customer-data. Class-level @SkipBindingVerified so the global
-// guard doesn't 403 them pre-binding (mobile polls /auth/me right after OTP, before
-// any bind exists). Without this, poll → 403 → redirect bind → /me → 403 = dead loop.
+// Handler-level @SkipBindingVerified on onboarding/identity routes (getMe,
+// check-registration, link/unlink-provider) — they're polled/called right after OTP,
+// before any bind exists, so the global deny-by-default guard must skip them (else
+// poll → 403 → redirect bind → /me → 403 = dead loop). NOT applied to link-customer:
+// that legacy phone/maKh → full-profile path bypasses the bill-secret proof binding
+// requires, so it stays gated (403) — use the bind flow instead.
 import { SkipBindingVerified } from '../../../binding/decorators/skip-binding-verified.decorator';
 import {
   SwaggerRegisterProviderDto,
@@ -62,7 +64,6 @@ import type {
  *   3. Syncs customer data to Backend API via PortHttpClient
  */
 @ApiTags('Auth')
-@SkipBindingVerified()
 @Controller('auth')
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);
@@ -117,6 +118,7 @@ export class AuthController {
    * Delegates to Backend API for the actual linking.
    * AC#4
    */
+  @SkipBindingVerified()
   @Post('link-provider')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT-auth')
@@ -153,6 +155,7 @@ export class AuthController {
    * Unlink a provider from the AUTHENTICATED user.
    * Delegates to better-auth's account-unlink API.
    */
+  @SkipBindingVerified()
   @Post('unlink-provider')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT-auth')
@@ -185,6 +188,7 @@ export class AuthController {
    *   profileStatus 'complete' → dashboard; 'no_match' → complete-profile screen.
    * NOTE: never returns the CCCD value — only `hasCccd` boolean.
    */
+  @SkipBindingVerified()
   @Get('me')
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Get current authenticated user profile + identity status' })
@@ -259,6 +263,7 @@ export class AuthController {
    * Synchronous stand-in for the async (RabbitMQ) identity-resolution event path
    * — same port method (`customer-profile find-by-phone`).
    */
+  @SkipBindingVerified()
   @Post('check-registration')
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Match user against Customer 360 by phone (post-OTP routing)' })
