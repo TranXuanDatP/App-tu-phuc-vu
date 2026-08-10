@@ -9,9 +9,11 @@
  *  - no user → defer (allow); integrity (verified row, no customerId) → 500.
  */
 
+import { Reflector } from '@nestjs/core';
 import { MemoryCacheService } from '../../src/libs/shared/caching/memory-cache.service';
 import { BindingVerifiedGuard } from '../../src/modules/binding/guards/binding-verified.guard';
 import { SKIP_BINDING_VERIFIED_KEY } from '../../src/modules/binding/decorators/skip-binding-verified.decorator';
+import { AuthController } from '../../src/modules/auth/infrastructure/http/auth.controller';
 
 const b64 = (v: string) => Buffer.from(v).toString('base64');
 const unb64 = (c: string) => Buffer.from(c, 'base64').toString('utf8');
@@ -165,5 +167,28 @@ describe('BindingVerifiedGuard (OPT-OUT — deny by default)', () => {
       pii as any,
     );
     expect(await guard.canActivate(ctx)).toBe(true);
+  });
+
+  // Guard-behavior test with the REAL Reflector + REAL AuthController metadata (not a
+  // mocked reflector). Asserts the actual /auth/me handler is opted out — so an
+  // authenticated, NOT-yet-bound session reaches it (mobile polls it post-OTP). If the
+  // class-level @SkipBindingVerified is removed from AuthController, this flips to 403
+  // and the post-OTP→bind dead loop returns. That regression is what this guards.
+  it('AuthController.getMe is OPTED OUT — passes for a bound-less session (regression guard)', async () => {
+    const guard = new BindingVerifiedGuard(
+      new Reflector(),
+      createMockDb([]) as any, // no binding row
+      cache as any,             // no binding cache
+      pii as any,
+    );
+    const request: any = { user: { id: 'u1' } }; // authenticated, NO binding
+    const ctx: any = {
+      getHandler: () => AuthController.prototype.getMe,
+      getClass: () => AuthController,
+      switchToHttp: () => ({ getRequest: () => request }),
+    };
+    expect(await guard.canActivate(ctx)).toBe(true);
+    // Onboarding route — guard must NOT attach request.customer (it's not customer-data).
+    expect(request.customer).toBeUndefined();
   });
 });

@@ -30,6 +30,11 @@ import {
 import { ValidationException } from '@core/common';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import { Public } from '../decorators/public.decorator';
+// AuthController hosts ONLY onboarding/identity routes (post-OTP routing, provider
+// linking) — none are customer-data. Class-level @SkipBindingVerified so the global
+// guard doesn't 403 them pre-binding (mobile polls /auth/me right after OTP, before
+// any bind exists). Without this, poll → 403 → redirect bind → /me → 403 = dead loop.
+import { SkipBindingVerified } from '../../../binding/decorators/skip-binding-verified.decorator';
 import {
   SwaggerRegisterProviderDto,
   SwaggerLinkProviderDto,
@@ -57,6 +62,7 @@ import type {
  *   3. Syncs customer data to Backend API via PortHttpClient
  */
 @ApiTags('Auth')
+@SkipBindingVerified()
 @Controller('auth')
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);
