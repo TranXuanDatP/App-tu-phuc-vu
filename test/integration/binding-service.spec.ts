@@ -192,7 +192,7 @@ describe('BindingService (A1.3 + A1.4)', () => {
   });
 
   // ── bind — verify failure + lockout (A1.4) ─────────────────────────────────
-  describe('bind — failure & dual-ceiling lockout', () => {
+  describe('bind — failure & triple-ceiling lockout', () => {
     it('returns {bound:false} on a wrong secret and locks per-(user,ref) after 3 fails', async () => {
       const db = createMockDb([{ phoneNumber: '+84901234567' }]);
       customerService.resolve.mockResolvedValue({
@@ -215,16 +215,25 @@ describe('BindingService (A1.3 + A1.4)', () => {
       // re-seed init (it survives — only deleted on success)
       expect(await service.bind('user-1', SESSION_ID, VALID_BODY, null)).toEqual({ bound: false });
 
-      // ...the 3rd fail crosses the per-(user,ref) ceiling → 429 BINDING_LOCKED.
+      // ...the 3rd fail crosses the per-(user,ref) ceiling → LockoutException. Its
+      // code + reason + retryAfterSec ride in `details` (BaseException path) so the
+      // global filter passes them through to the wire body — NOT stripped like the old
+      // raw HttpException throw. The mobile branches UX on details.reason.
       await expect(
         service.bind('user-1', SESSION_ID, VALID_BODY, null),
-      ).rejects.toMatchObject({ status: 429 });
+      ).rejects.toMatchObject({
+        code: 'BINDING_LOCKED',
+        details: { reason: 'user_ref', retryAfterSec: expect.any(Number) },
+      });
 
       // Subsequent attempts are locked BEFORE verify (even with correct secret).
       customerService.verify.mockResolvedValueOnce({ verified: true });
       await expect(
         service.bind('user-1', SESSION_ID, VALID_BODY, null),
-      ).rejects.toMatchObject({ status: 429 });
+      ).rejects.toMatchObject({
+        code: 'BINDING_LOCKED',
+        details: { reason: 'user_ref' },
+      });
       expect(customerService.verify).toHaveBeenCalledTimes(3); // 3 fails only — 4th was pre-locked
     });
   });

@@ -14,7 +14,7 @@
  *
  * Lockout (A1.4) is delegated to BindingRateLimiter (dual ceiling).
  */
-import { Injectable, Inject, Logger, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import { eq, and } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { type DrizzleDB } from '@shared';
@@ -24,7 +24,7 @@ import {
 } from '@core/constants/tokens';
 import type { ICacheService } from '@core';
 import { ValidationException } from '@core/common';
-import { ConflictException } from '@core/common';
+import { ConflictException, LockoutException } from '@core/common';
 import { PII_ENCRYPTION_SERVICE_TOKEN } from '@modules/auth/constants/tokens';
 import { PiiEncryptionService } from '@modules/auth/infrastructure/persistence/encryption/pii-encryption.service';
 import { usersTable } from '@modules/auth/infrastructure/persistence/drizzle/schema/user.schema';
@@ -99,18 +99,13 @@ export class BindingService {
       throw new ValidationException('Khách hàng không hợp lệ cho phiên này.');
     }
 
-    // A1.4 — dual-ceiling lockout check BEFORE attempting verify.
+    // A1.4 — triple-ceiling lockout check BEFORE attempting verify. LockoutException
+    // carries reason (user_ref|customer_ref|session) + retryAfterSec so the client can
+    // show the right message + countdown; extends BaseException so the filter passes
+    // code+details through (HttpException would strip them).
     const lock = await this.rateLimiter.checkLocked(userId, body.customerRef);
     if (lock.locked) {
-      throw new HttpException(
-        {
-          statusCode: HttpStatus.TOO_MANY_REQUESTS,
-          code: 'BINDING_LOCKED',
-          message: 'Đã vượt số lần thử cho phép. Vui lòng thử lại sau.',
-          retryAfter: lock.retryAfterSec,
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
+      throw new LockoutException(lock.reason ?? 'user_ref', lock.retryAfterSec ?? 900);
     }
 
     const verdict = await this.customerService.verify({
@@ -122,15 +117,7 @@ export class BindingService {
     if (!verdict.verified) {
       const fail = await this.rateLimiter.recordFailure(userId, body.customerRef);
       if (fail.lockedNow) {
-        throw new HttpException(
-          {
-            statusCode: HttpStatus.TOO_MANY_REQUESTS,
-            code: 'BINDING_LOCKED',
-            message: 'Đã vượt số lần thử cho phép. Vui lòng thử lại sau.',
-            retryAfter: fail.retryAfterSec,
-          },
-          HttpStatus.TOO_MANY_REQUESTS,
-        );
+        throw new LockoutException(fail.reason ?? 'user_ref', fail.retryAfterSec ?? 900);
       }
       return { bound: false };
     }

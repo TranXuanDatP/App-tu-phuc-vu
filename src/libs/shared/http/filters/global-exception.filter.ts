@@ -15,6 +15,7 @@ import {
   UnauthorizedException,
   ForbiddenException,
   ConflictException,
+  LockoutException,
 } from 'src/libs/core/common';
 import {
   PortDownstreamException,
@@ -169,6 +170,9 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     }
     if (exception instanceof ConflictException) {
       return HttpStatus.CONFLICT;
+    }
+    if (exception instanceof LockoutException) {
+      return HttpStatus.TOO_MANY_REQUESTS;
     }
     if (exception instanceof ConcurrencyException) {
       return HttpStatus.CONFLICT;
