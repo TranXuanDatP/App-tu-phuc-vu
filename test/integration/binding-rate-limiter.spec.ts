@@ -1,17 +1,18 @@
 /**
- * BindingRateLimiter tests (A1.4) — dual-ceiling lockout, isolated.
+ * BindingRateLimiter tests (A1.4) — triple-ceiling lockout, isolated.
  *
  * Real MemoryCacheService so the windowed-counter + lock semantics are exercised.
  * Covers the SPEC-A4-A1 §A1.4 matrix:
  *  - per-(user,customer): 3 fails → lock (15m).
  *  - per-customer GLOBAL (Fix 2): 10 fails across MANY users → lock for ALL (24h).
+ *  - per-user TOTAL (Fix-3 cond. a): 5 fails across MANY refs → lock user entirely (15m).
  *  - clearFailures resets only the per-(user,customer) counter.
  */
 
 import { MemoryCacheService } from '../../src/libs/shared/caching/memory-cache.service';
 import { BindingRateLimiter } from '../../src/modules/binding/binding-rate-limiter.service';
 
-describe('BindingRateLimiter (A1.4 — dual ceiling)', () => {
+describe('BindingRateLimiter (A1.4 — triple ceiling)', () => {
   let rl: BindingRateLimiter;
 
   beforeEach(() => {
@@ -77,5 +78,36 @@ describe('BindingRateLimiter (A1.4 — dual ceiling)', () => {
     expect(r3.reason).toBe('user_ref');
     // Global customer lock NOT armed for REF-X (needs 10 across users).
     expect((await rl.checkLocked('someoneElse', 'REF-X')).locked).toBe(false);
+  });
+
+  // Ceiling 3 — per-user TOTAL across all customerRefs (Fix-3 condition (a): chặn 3×N).
+  it('per-user TOTAL: N candidate → 3×N blocked (5 fails across refs → session lock)', async () => {
+    // One account brute-forces across disambiguation candidates (household multi-ref).
+    // 2 fails on REF-A + 2 on REF-B = 4 total (under per-ref 3, under total 5).
+    await rl.recordFailure('u1', 'REF-A');
+    await rl.recordFailure('u1', 'REF-A');
+    await rl.recordFailure('u1', 'REF-B');
+    await rl.recordFailure('u1', 'REF-B');
+    expect((await rl.checkLocked('u1', 'REF-A')).locked).toBe(false);
+    expect((await rl.checkLocked('u1', 'REF-C')).locked).toBe(false);
+
+    // 5th fail (REF-C) arms the session-total lock — even though REF-C has only 1 fail.
+    const fifth = await rl.recordFailure('u1', 'REF-C');
+    expect(fifth.lockedNow).toBe(true);
+    expect(fifth.reason).toBe('session');
+
+    // User now locked out of EVERY ref, not just the one that tipped the total.
+    expect((await rl.checkLocked('u1', 'REF-A')).locked).toBe(true);
+    expect((await rl.checkLocked('u1', 'REF-A')).reason).toBe('session');
+    expect((await rl.checkLocked('u1', 'REF-NEW')).locked).toBe(true);
+  });
+
+  it('per-user TOTAL is scoped to that user — a different user is unaffected', async () => {
+    for (const ref of ['REF-A', 'REF-B', 'REF-C', 'REF-D', 'REF-E']) {
+      await rl.recordFailure('u1', ref); // 5 fails across refs → u1 session-locked
+    }
+    expect((await rl.checkLocked('u1', 'REF-A')).locked).toBe(true);
+    // u2 can still bind — the total is per-user, not global.
+    expect((await rl.checkLocked('u2', 'REF-A')).locked).toBe(false);
   });
 });
