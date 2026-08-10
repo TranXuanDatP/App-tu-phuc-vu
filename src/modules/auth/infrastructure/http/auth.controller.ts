@@ -18,10 +18,11 @@ import {
 } from '@nestjs/swagger';
 import { PortHttpClient } from '@shared/port/port-http-client.service';
 import { PortRegistry } from '@shared/port';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { type DrizzleDB } from '@shared';
 import { DATABASE_WRITE_TOKEN } from '@core/constants/tokens';
 import { usersTable } from '../persistence/drizzle/schema/user.schema';
+import { customerBindingsTable } from '../../../binding/infrastructure/persistence/drizzle/schema/binding.schema';
 import type { CustomerProfileResponse } from '../../../account/dto/customer-profile.dto';
 import {
   RegisterProviderSchema,  LinkProviderSchema,
@@ -197,6 +198,24 @@ export class AuthController {
       .limit(1);
 
     const user = rows[0];
+
+    // `linked` = hasVerifiedBinding (customer_bindings.status='verified'). NOT users.customerId —
+    // that legacy identity column is set by check-registration phone-match, which bypasses the
+    // bill-secret proof, so `!!customerId` returned true for users the guard would 403. This is
+    // the single-source repoint (auth/me was reader #2 of users.customerId). The full customerId
+    // return repoint (decrypt from binding) is a separate, larger item — customerId stays legacy.
+    const bindingRows = await this.db
+      .select({ id: customerBindingsTable.id })
+      .from(customerBindingsTable)
+      .where(
+        and(
+          eq(customerBindingsTable.userId, userId),
+          eq(customerBindingsTable.status, 'verified'),
+        ),
+      )
+      .limit(1);
+    const linked = bindingRows.length > 0;
+
     if (!user) {
       return {
         userId,
@@ -204,7 +223,7 @@ export class AuthController {
         fullName: null,
         hasCccd: false,
         customerId: null,
-        linked: false,
+        linked,
       };
     }
 
@@ -214,7 +233,7 @@ export class AuthController {
       fullName: user.fullName,
       hasCccd: !!user.cccd,
       customerId: user.customerId,
-      linked: !!user.customerId,
+      linked,
     };
   }
 

@@ -28,6 +28,20 @@ function createMockDb(userRow: object | null) {
   return { select, update };
 }
 
+/**
+ * Mock db for GET /auth/me — getMe issues TWO selects (user row, then binding row).
+ * limit() chains mockResolvedValueOnce in call order: 1st=user, 2nd=binding.
+ */
+function createMockDbForMe(userRow: object | null, bindingRow: object | null) {
+  const limit = jest.fn()
+    .mockResolvedValueOnce(userRow ? [userRow] : [])
+    .mockResolvedValueOnce(bindingRow ? [bindingRow] : []);
+  const whereSelect = jest.fn().mockReturnValue({ limit });
+  const from = jest.fn().mockReturnValue({ where: whereSelect });
+  const select = jest.fn().mockReturnValue({ from });
+  return { select };
+}
+
 const VALID_REGISTER_BODY = {
   fullName: 'Test User',
   classification: 'sinh_hoat' as const,
@@ -136,6 +150,49 @@ describe('Auth Contract Tests', () => {
       const result = await controller.checkRegistration('user-1');
 
       expect(result.registered).toBe(false);
+    });
+  });
+
+  // ── GET /auth/me ────────────────────────────────────────────────────────────
+
+  describe('getMe — linked source = customer_bindings (not users.customerId)', () => {
+    it('linked=false when user has legacy users.customerId but NO verified binding (repoint proof)', async () => {
+      // users.customerId set (via legacy check-registration phone-match) but no binding row →
+      // guard would 403 this user. Old code returned linked=!!customerId=true (WRONG).
+      mockDb = createMockDbForMe(
+        { id: 'u1', fullName: 'A', cccd: null, customerId: 'QN-0912345', profileStatus: 'complete' },
+        null,
+      ) as any;
+      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
+
+      const result = await controller.getMe('u1');
+
+      expect(result.linked).toBe(false); // NOT !!customerId — the whole point of the repoint
+      expect(result.customerId).toBe('QN-0912345'); // legacy field kept (backward compat)
+      expect(result.profileStatus).toBe('complete');
+    });
+
+    it('linked=true when a verified binding exists (even if users.customerId is null)', async () => {
+      // bind-register path inserts a verified binding but never sets users.customerId.
+      mockDb = createMockDbForMe(
+        { id: 'u1', fullName: 'A', cccd: null, customerId: null, profileStatus: 'incomplete' },
+        { id: 'b1' },
+      ) as any;
+      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
+
+      const result = await controller.getMe('u1');
+
+      expect(result.linked).toBe(true);
+    });
+
+    it('linked=false when no user found', async () => {
+      mockDb = createMockDbForMe(null, null) as any;
+      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
+
+      const result = await controller.getMe('ghost');
+
+      expect(result.linked).toBe(false);
+      expect(result.profileStatus).toBe('incomplete');
     });
   });
 });
