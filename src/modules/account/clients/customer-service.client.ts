@@ -26,8 +26,28 @@ export interface ResolveResult {
   customerRef?: string;
   /** e.g. "Nguyễn V*** • 12 Lê Lợi, Hải Châu" — enough to recognize, not enumerate. */
   maskedHint?: string;
-  /** Disambiguation list for N-match (entries differ by ADDRESS). Present for many. */
-  candidates?: Array<{ customerRef: string; maskedHint: string }>;
+  /** status:'one' — BE-chosen challenge factor; mobile renders from this descriptor
+   *  (label + inputMode) and echoes `type` as secretType. It NEVER knows the enum, so
+   *  B5 changing the factor is a one-line BE change (Fix-3 cond. c: hint stays
+   *  address-based regardless of which factor verifies). */
+  challenge?: ChallengeDescriptor;
+  /** Disambiguation list for N≤3 match (entries differ by ADDRESS). Each carries its
+   *  own challenge. Absent when capped. */
+  candidates?: Array<{ customerRef: string; maskedHint: string; challenge: ChallengeDescriptor }>;
+  /** status:'many' with N>3 — too many matches (shared/recycled phone, or data error).
+   *  No candidates (no enumeration surface); mobile routes to hotline. Fix-3 cond. (b). */
+  capped?: boolean;
+}
+
+/** BE-chosen verify factor, described for the mobile to render. The mobile must NOT
+ *  let the user pick a factor (an attacker picks the easiest) — BE decides, mobile renders. */
+export interface ChallengeDescriptor {
+  /** The factor BE chose for this customerRef; mobile echoes this as secretType on /auth/bind. */
+  type: SecretType;
+  /** VI label for the input, e.g. "Số tiền hoá đơn gần nhất". */
+  label: string;
+  /** 'numeric' (amount) | 'text' (mã KH / contract #). */
+  inputMode: 'numeric' | 'text';
 }
 
 /** Pluggable verify factor (SPEC-A4-A1 A1.3). Concrete factor locks when B5 is answered. */

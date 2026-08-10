@@ -36,6 +36,9 @@ describe('Mock customer-service contract (A4)', () => {
       expect(json).not.toContain('QN-0912345'); // real customerId
       expect(json).not.toContain('Nguyễn Văn Nam'); // full name
       expect(json).not.toContain('901234567'); // phone digits
+      // 1c — challenge descriptor present (BE-chosen factor; mobile renders from this).
+      expect(r.challenge).toMatchObject({ type: 'last_invoice_amount', inputMode: 'numeric' });
+      expect(typeof r.challenge?.label).toBe('string');
     });
 
     it('N-match → {status:"many", candidates[2]} differing by address, no customerId', async () => {
@@ -49,6 +52,16 @@ describe('Mock customer-service contract (A4)', () => {
       const json = JSON.stringify(r);
       expect(json).not.toContain('QN-0777123');
       expect(json).not.toContain('QN-0666001');
+      // 1c — each candidate carries its own challenge descriptor (mobile renders per-candidate).
+      expect(r.candidates!.every((c) => c.challenge?.type === 'last_invoice_amount')).toBe(true);
+    });
+
+    it('N>3 → {status:"many", capped:true} with NO candidates (Fix-3 cond. b)', async () => {
+      // 4 matches on a shared/recycled phone (REF-005..008) — not a household.
+      const r = await client.resolve('+84666555444');
+      expect(r.status).toBe('many');
+      expect(r.capped).toBe(true);
+      expect(r.candidates).toBeUndefined(); // no list to enumerate → hotline
     });
 
     it('accepts varied phone formats (0…/84/+) and still resolves', async () => {

@@ -25,6 +25,7 @@ import type {
   CreateCustomerRequest,
   CreateCustomerResult,
   ResolveResult,
+  ChallengeDescriptor,
   VerifyRequest,
   VerifyResult,
 } from './customer-service.client';
@@ -109,6 +110,32 @@ const SEED_CUSTOMERS: SeedCustomer[] = [
       fullAddress: 'Trần Phú, An Hải Bắc, Sơn Trà, Đà Nẵng',
     },
   },
+  // N>3 cap cluster (Fix-3 cond. b) — 4 customers share phone '666555444' (a shared/
+  // recycled number) → resolve returns {status:'many', capped:true}, NO candidates.
+  {
+    customerRef: 'REF-005', fullName: 'Phạm Văn Năm', phone: '666555444',
+    customerId: 'QN-0555001', classification: 'sinh_hoat', lastInvoiceAmount: '100000',
+    addressPrefix: 'Hùng Vương, Liên Chiểu',
+    fullAddress: { street: 'Hùng Vương', ward: 'Hòa Khê', district: 'Liên Chiểu', city: 'Đà Nẵng', fullAddress: 'Hùng Vương, Hòa Khê, Liên Chiểu, Đà Nẵng' },
+  },
+  {
+    customerRef: 'REF-006', fullName: 'Phạm Thị Sáu', phone: '666555444',
+    customerId: 'QN-0666002', classification: 'sinh_hoat', lastInvoiceAmount: '110000',
+    addressPrefix: 'Điện Biên Phủ, Thanh Khê',
+    fullAddress: { street: 'Điện Biên Phủ', ward: 'Thanh Khê Đông', district: 'Thanh Khê', city: 'Đà Nẵng', fullAddress: 'Điện Biên Phủ, Thanh Khê Đông, Thanh Khê, Đà Nẵng' },
+  },
+  {
+    customerRef: 'REF-007', fullName: 'Phạm Văn Bảy', phone: '666555444',
+    customerId: 'QN-0777003', classification: 'san_xuat', lastInvoiceAmount: '120000',
+    addressPrefix: 'Nguyễn Tri Phương, Liên Chiểu',
+    fullAddress: { street: 'Nguyễn Tri Phương', ward: 'Hòa Khê Bắc', district: 'Liên Chiểu', city: 'Đà Nẵng', fullAddress: 'Nguyễn Tri Phương, Hòa Khê Bắc, Liên Chiểu, Đà Nẵng' },
+  },
+  {
+    customerRef: 'REF-008', fullName: 'Phạm Thị Tám', phone: '666555444',
+    customerId: 'QN-0888004', classification: 'hanh_chinh', lastInvoiceAmount: '130000',
+    addressPrefix: 'Hải Phòng, Thanh Khê',
+    fullAddress: { street: 'Hải Phòng', ward: 'Xuân Hà', district: 'Thanh Khê', city: 'Đà Nẵng', fullAddress: 'Hải Phòng, Xuân Hà, Thanh Khê, Đà Nẵng' },
+  },
 ];
 
 // Module-level counter for customers created via the new-customer branch (register→bind).
@@ -134,14 +161,25 @@ export class MockCustomerServiceClient implements CustomerServiceClient {
     }
     if (matches.length === 1) {
       const c = matches[0];
-      return { status: 'one', customerRef: c.customerRef, maskedHint: this.hint(c) };
+      return {
+        status: 'one',
+        customerRef: c.customerRef,
+        maskedHint: this.hint(c),
+        challenge: this.challengeFor(c),
+      };
     }
-    // N-match — disambiguate by ADDRESS (Fix 3), never by mã KH / contract # / amount.
+    // N-match cap (Fix-3 cond. b): N>3 is not a household — shared/recycled phone or
+    // data error. Return NO candidates (no enumeration surface); mobile routes to hotline.
+    if (matches.length > 3) {
+      return { status: 'many', capped: true };
+    }
+    // 2-3 matches — disambiguate by ADDRESS (Fix 3), never by mã KH / contract # / amount.
     return {
       status: 'many',
       candidates: matches.map((c) => ({
         customerRef: c.customerRef,
         maskedHint: this.hint(c),
+        challenge: this.challengeFor(c),
       })),
     };
   }
@@ -239,6 +277,20 @@ export class MockCustomerServiceClient implements CustomerServiceClient {
 
   private hint(c: SeedCustomer): string {
     return `${this.maskedName(c.fullName)} • ${c.addressPrefix}`;
+  }
+
+  /**
+   * BE chooses the verify factor server-side and describes it here. Mobile renders the
+   * descriptor (label + inputMode) and echoes `type` as secretType — it never knows the
+   * enum, so B5 changing the factor is a one-line BE change. Fix-3 cond. (c) survives:
+   * maskedHint stays address-based regardless of which factor verifies.
+   */
+  private challengeFor(_c: SeedCustomer): ChallengeDescriptor {
+    return {
+      type: 'last_invoice_amount',
+      label: 'Số tiền hoá đơn gần nhất',
+      inputMode: 'numeric',
+    };
   }
 
   private normalizePhone(phone: string): string {
