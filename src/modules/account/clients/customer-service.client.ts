@@ -17,8 +17,13 @@ import type { CustomerProfileResponse } from '../dto/customer-profile.dto';
 
 /**
  * resolve() result. A masked candidate ONLY — never the real customerId, full name,
- * phone, mã KH, contract # or amount. The hint is ADDRESS-based (Fix 3) so it can't
- * shrink the space of any factor that could itself be the verify secret.
+ * phone, mã KH, contract # or amount.
+ *
+ * SPEC INVARIANT (Fix-3 cond. c — MUST survive B5): maskedHint is ADDRESS-based and
+ * MUST NOT reveal any part of the verify-secret value. When B5 selects a concrete
+ * factor (e.g. mã KH or contract #), re-verify the hint still doesn't overlap that
+ * value's digits/segments. This is the load-bearing reason Fix 3 chose addresses —
+ * keep it in the spec, not in anyone's head.
  */
 export interface ResolveResult {
   status: 'none' | 'one' | 'many';

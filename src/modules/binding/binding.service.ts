@@ -68,6 +68,14 @@ export class BindingService {
     }
 
     const result = await this.customerService.resolve(phone);
+    // A1.5 audit — bind-init is the highest-attack-value surface (N-match disambiguation).
+    // Log the resolve outcome so the N-match rate is measurable and the keep-Fix-3 vs
+    // deny-all decision can later be made on real numbers, not feel.
+    this.logger.log(
+      `bind-init resolve user=${userId} status=${result.status}` +
+        (result.candidates ? ` N=${result.candidates.length}` : '') +
+        (result.capped ? ' capped=true' : ''),
+    );
     // Persist the resolve result keyed by sessionId so bind can validate customerRef
     // provenance (Fix 1). Single-use: deleted after a successful bind.
     await this.cache.set(this.initKey(sessionId), result, this.INIT_TTL_SEC);
