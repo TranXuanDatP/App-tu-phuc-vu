@@ -378,39 +378,4 @@ export class AuthController {
       return null;
     }
   }
-
-  @Post('link-customer')
-  @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Auto-match user with Customer 360 by phone, or manual link by mã KH' })
-  async linkCustomer(
-    @CurrentUser('id') userId: string,
-    @Body() body: { phone?: string; maKh?: string },
-  ) {
-    // Manual mode: link by mã KH
-    if (body.maKh) {
-      try {
-        const result = await this.portRegistry.execute('customer-profile', 'get-profile', { customerId: body.maKh });
-        if (result?.data) {
-          return { matched: true, customer: result.data };
-        }
-      } catch { /* fall through to no-match */ }
-      return { matched: false };
-    }
-
-    // Auto-match mode: link by phone
-    if (body.phone) {
-      // Demo rule: phones containing "0000" don't match (for testing no-match flow)
-      if (body.phone.includes('0000')) {
-        return { matched: false };
-      }
-      try {
-        const result = await this.portRegistry.execute('customer-profile', 'find-by-phone', { phone: body.phone });
-        if (result?.data) {
-          return { matched: true, customer: result.data };
-        }
-      } catch { /* fall through to no-match */ }
-    }
-
-    return { matched: false };
-  }
 }

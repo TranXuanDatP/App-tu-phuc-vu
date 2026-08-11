@@ -191,24 +191,4 @@ describe('BindingVerifiedGuard (OPT-OUT — deny by default)', () => {
     // Onboarding route — guard must NOT attach request.customer (it's not customer-data).
     expect(request.customer).toBeUndefined();
   });
-
-  // P1 regression guard: link-customer is the legacy phone/maKh → full-profile path that
-  // bypasses the bill-secret proof. It MUST stay gated (403) — if someone re-adds a skip
-  // for it (class- or handler-level), this fails and the profile-enumeration vector stays
-  // closed. Use the bind flow (bind-init/bind) instead.
-  it('AuthController.linkCustomer is NOT opted out — gated, returns 403 pre-binding', async () => {
-    const guard = new BindingVerifiedGuard(
-      new Reflector(),
-      createMockDb([]) as any, // no binding row
-      cache as any,
-      pii as any,
-    );
-    const request: any = { user: { id: 'u1' } };
-    const ctx: any = {
-      getHandler: () => AuthController.prototype.linkCustomer,
-      getClass: () => AuthController,
-      switchToHttp: () => ({ getRequest: () => request }),
-    };
-    await expect(guard.canActivate(ctx)).rejects.toMatchObject({ status: 403 });
-  });
 });
