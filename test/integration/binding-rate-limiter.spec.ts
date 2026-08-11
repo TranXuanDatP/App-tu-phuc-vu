@@ -110,4 +110,23 @@ describe('BindingRateLimiter (A1.4 — triple ceiling)', () => {
     // u2 can still bind — the total is per-user, not global.
     expect((await rl.checkLocked('u2', 'REF-A')).locked).toBe(false);
   });
+
+  it('clearFailures clears the per-user TOTAL — success resets the cross-ref budget', async () => {
+    // 4 fails across refs → total=4 (one away from session-lock).
+    await rl.recordFailure('u1', 'REF-A');
+    await rl.recordFailure('u1', 'REF-A');
+    await rl.recordFailure('u1', 'REF-B');
+    await rl.recordFailure('u1', 'REF-B');
+    // A successful bind on REF-A clears per-(u1,REF-A) AND the per-user total.
+    await rl.clearFailures('u1', 'REF-A');
+
+    // Now 4 fresh fails on NEW refs must NOT session-lock (would lock at 4 if total wasn't cleared).
+    await rl.recordFailure('u1', 'REF-C');
+    await rl.recordFailure('u1', 'REF-C');
+    await rl.recordFailure('u1', 'REF-D');
+    const fourth = await rl.recordFailure('u1', 'REF-D');
+    expect(fourth.lockedNow).toBe(false); // total=4 since clear — under limit 5
+    // 5th since clear → session-lock.
+    expect((await rl.recordFailure('u1', 'REF-C')).lockedNow).toBe(true);
+  });
 });

@@ -19,9 +19,10 @@
  * BFF brute-force layer; Redis narrows the race. Lockout events are warn-logged (a
  * full audit table is A1.5, out of this batch).
  *
- * On a successful bind, only the per-(userId,customerRef) counter is cleared — the
- * per-customerRef GLOBAL and per-user TOTAL counters are intentionally NOT reset
- * (they track cross-ref/cross-user attack patterns and expire by their window).
+ * On a successful bind, the per-(userId,customerRef) AND per-user TOTAL counters are
+ * cleared (success = strong "not an attacker" signal; keeping the total would lock a
+ * legit household explorer who failed across refs before succeeding). The per-customerRef
+ * GLOBAL counter is intentionally NOT reset (tracks cross-user patterns, expires by window).
  */
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import { CACHE_SERVICE_TOKEN } from '@core/constants/tokens';
@@ -137,9 +138,14 @@ export class BindingRateLimiter {
     return { lockedNow: false };
   }
 
-  /** On success — clear the per-(user, customer) counter only (NOT global/total). */
+  /** On success — clear the per-(user, customer) counter AND the per-user TOTAL counter
+   *  (a successful bind is a strong "not an attacker" signal; keeping the total would
+   *  session-lock a legit household explorer who failed a few times across refs before
+   *  succeeding). The per-customerRef GLOBAL counter is intentionally NOT reset (it
+   *  tracks cross-user attack patterns and expires by its window). */
   async clearFailures(userId: string, customerRef: string): Promise<void> {
     await this.cache.delete(this.userFailKey(userId, customerRef));
+    await this.cache.delete(this.userTotalFailKey(userId));
   }
 
   // ── helpers ────────────────────────────────────────────────────────────────
