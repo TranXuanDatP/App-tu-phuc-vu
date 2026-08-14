@@ -42,6 +42,9 @@ function createMockDbForMe(userRow: object | null, bindingRow: object | null) {
   return { select };
 }
 
+/** Mock PiiEncryptionService — identity decrypt (returns cipher as-is) for getMe tests. */
+const mockPii = { decryptIfNeeded: jest.fn((c: string | null | undefined) => c ?? null) } as any;
+
 const VALID_REGISTER_BODY = {
   fullName: 'Test User',
   classification: 'sinh_hoat' as const,
@@ -80,7 +83,7 @@ describe('Auth Contract Tests', () => {
         data: { ...MOCK_CUSTOMER, customerId: 'QN-0912345' },
       });
 
-      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
+      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any, mockPii);
 
       const result = await controller.checkRegistration('user-1');
 
@@ -95,7 +98,7 @@ describe('Auth Contract Tests', () => {
       mockDb = createMockDb({ phoneNumber: '+84900000000' });
       mockPortRegistry.execute.mockResolvedValue({ data: null });
 
-      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
+      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any, mockPii);
 
       const result = await controller.checkRegistration('user-1');
 
@@ -130,7 +133,7 @@ describe('Auth Contract Tests', () => {
         data: { ...MOCK_CUSTOMER, customerId: 'QN-0912345' },
       });
 
-      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
+      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any, mockPii);
 
       const result = await controller.checkRegistration('user-1') as Record<string, unknown>;
 
@@ -145,7 +148,7 @@ describe('Auth Contract Tests', () => {
     it('should return {registered:false} when user has no phone', async () => {
       mockDb = createMockDb(null);
 
-      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
+      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any, mockPii);
 
       const result = await controller.checkRegistration('user-1');
 
@@ -155,39 +158,39 @@ describe('Auth Contract Tests', () => {
 
   // ── GET /auth/me ────────────────────────────────────────────────────────────
 
-  describe('getMe — linked source = customer_bindings (not users.customerId)', () => {
-    it('linked=false when user has legacy users.customerId but NO verified binding (repoint proof)', async () => {
-      // users.customerId set (via legacy check-registration phone-match) but no binding row →
-      // guard would 403 this user. Old code returned linked=!!customerId=true (WRONG).
+  describe('getMe — single-source: linked + customerId from binding (not users.customerId)', () => {
+    it('linked=false + customerId=null when no verified binding (legacy users.customerId ignored)', async () => {
+      // Legacy users.customerId (set by check-registration phone-match) is no longer read —
+      // customerId derives from the binding cipher. No binding → null, even if the legacy column held a value.
       mockDb = createMockDbForMe(
         { id: 'u1', fullName: 'A', cccd: null, customerId: 'QN-0912345', profileStatus: 'complete' },
         null,
       ) as any;
-      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
+      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any, mockPii);
 
       const result = await controller.getMe('u1');
 
-      expect(result.linked).toBe(false); // NOT !!customerId — the whole point of the repoint
-      expect(result.customerId).toBe('QN-0912345'); // legacy field kept (backward compat)
+      expect(result.linked).toBe(false);
+      expect(result.customerId).toBe(null); // legacy users.customerId gone — decrypt from binding (none) → null
       expect(result.profileStatus).toBe('complete');
     });
 
-    it('linked=true when a verified binding exists (even if users.customerId is null)', async () => {
-      // bind-register path inserts a verified binding but never sets users.customerId.
+    it('linked=true + customerId decrypted from binding cipher', async () => {
       mockDb = createMockDbForMe(
         { id: 'u1', fullName: 'A', cccd: null, customerId: null, profileStatus: 'incomplete' },
-        { id: 'b1' },
+        { id: 'b1', customerIdCipher: 'QN-0912345-cipher' },
       ) as any;
-      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
+      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any, mockPii);
 
       const result = await controller.getMe('u1');
 
       expect(result.linked).toBe(true);
+      expect(result.customerId).toBe('QN-0912345-cipher'); // decrypted from binding (mock identity)
     });
 
     it('linked=false when no user found', async () => {
       mockDb = createMockDbForMe(null, null) as any;
-      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any);
+      controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any, mockPii);
 
       const result = await controller.getMe('ghost');
 

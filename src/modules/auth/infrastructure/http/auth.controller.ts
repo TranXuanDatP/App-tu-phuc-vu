@@ -23,6 +23,8 @@ import { type DrizzleDB } from '@shared';
 import { DATABASE_WRITE_TOKEN } from '@core/constants/tokens';
 import { usersTable } from '../persistence/drizzle/schema/user.schema';
 import { customerBindingsTable } from '../../../binding/infrastructure/persistence/drizzle/schema/binding.schema';
+import { PII_ENCRYPTION_SERVICE_TOKEN } from '../../constants/tokens';
+import { PiiEncryptionService } from '../persistence/encryption/pii-encryption.service';
 import type { CustomerProfileResponse } from '../../../account/dto/customer-profile.dto';
 import {
   RegisterProviderSchema,  LinkProviderSchema,
@@ -74,6 +76,7 @@ export class AuthController {
     private readonly portRegistry: PortRegistry,
     @Inject(DATABASE_WRITE_TOKEN) private readonly db: DrizzleDB,
     private readonly config: ConfigService,
+    @Inject(PII_ENCRYPTION_SERVICE_TOKEN) private readonly pii: PiiEncryptionService,
   ) {
     // Gate: when CUSTOMER_SERVICE_URL is set, check-registration calls the real
     // customer service to resolve phone → customerId. When unset → mock (current
@@ -200,7 +203,6 @@ export class AuthController {
         userId: usersTable.id,
         fullName: usersTable.fullName,
         cccd: usersTable.cccd,
-        customerId: usersTable.customerId,
         profileStatus: usersTable.profileStatus,
       })
       .from(usersTable)
@@ -209,13 +211,15 @@ export class AuthController {
 
     const user = rows[0];
 
-    // `linked` = hasVerifiedBinding (customer_bindings.status='verified'). NOT users.customerId —
-    // that legacy identity column is set by check-registration phone-match, which bypasses the
-    // bill-secret proof, so `!!customerId` returned true for users the guard would 403. This is
-    // the single-source repoint (auth/me was reader #2 of users.customerId). The full customerId
-    // return repoint (decrypt from binding) is a separate, larger item — customerId stays legacy.
+    // Single-source: `linked` + `customerId` both derive from the verified binding row
+    // (customer_bindings.status='verified'), NOT the legacy users.customerId column (set by
+    // check-registration phone-match, bypassing bill-secret proof). customerId is decrypted from
+    // the binding cipher (same path as BindingVerifiedGuard) — null when no binding.
     const bindingRows = await this.db
-      .select({ id: customerBindingsTable.id })
+      .select({
+        id: customerBindingsTable.id,
+        customerIdCipher: customerBindingsTable.customerId,
+      })
       .from(customerBindingsTable)
       .where(
         and(
@@ -225,6 +229,7 @@ export class AuthController {
       )
       .limit(1);
     const linked = bindingRows.length > 0;
+    const customerId = this.pii.decryptIfNeeded(bindingRows[0]?.customerIdCipher ?? null);
 
     if (!user) {
       return {
@@ -232,7 +237,7 @@ export class AuthController {
         profileStatus: 'incomplete' as const,
         fullName: null,
         hasCccd: false,
-        customerId: null,
+        customerId,
         linked,
       };
     }
@@ -242,7 +247,7 @@ export class AuthController {
       profileStatus: user.profileStatus ?? 'incomplete',
       fullName: user.fullName,
       hasCccd: !!user.cccd,
-      customerId: user.customerId,
+      customerId,
       linked,
     };
   }
@@ -291,7 +296,6 @@ export class AuthController {
       await this.db
         .update(usersTable)
         .set({
-          customerId: customer.customerId,
           profileStatus: 'complete',
           updatedAt: new Date(),
         })
