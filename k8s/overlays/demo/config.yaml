@@ -21,3 +21,7 @@ data:
   ZALO_OA_BASE_URL: https://openapi.zaloapp.com
   BACKEND_BASE_URL: http://localhost:8080
   NOTIFICATION_TENANT_ID: tnt_hawaco
+  # Chat wire → CSKH agent inbox: dùng Service URL NỘI BỘ (pod-to-pod, cross-ns) thay vì
+  # public host — để NetworkPolicy của omnichannel-demo phân biệt traffic từ BFF pod
+  # (demo ns) với traffic public qua ingress (node IP). NP là L3/L4, không match path.
+  CSKH_WEBHOOK_URL: http://omnichannel-be-svc.omnichannel-demo.svc.cluster.local

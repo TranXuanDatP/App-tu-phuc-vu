@@ -6,7 +6,7 @@
  */
 import { Injectable } from '@nestjs/common';
 import { PortRegistry } from '@shared/port';
-import { PortFallbackException } from '@shared/port/port-exceptions';
+import { PortException, PortFallbackException } from '@shared/port/port-exceptions';
 import { ValidationException } from '@core/common';
 import { ClickToCallRequestSchema } from './dto/click-to-call.dto';
 import type { ClickToCallResult, CallHistory } from './dto/call-center.dto';
@@ -49,12 +49,23 @@ export class SupportService {
     if (!parsed.success) {
       throw new ValidationException(parsed.error.message);
     }
-    const r = await this.portRegistry.execute<SendMessageResult>(
-      'cskh-chat',
-      'send-message',
-      { userId, text },
-    );
-    return r?.data ?? { sent: false };
+    try {
+      const r = await this.portRegistry.execute<SendMessageResult>(
+        'cskh-chat',
+        'send-message',
+        { userId, text },
+      );
+      return r?.data ?? { sent: false };
+    } catch (e) {
+      // Infra failure (5xx/timeout/unreachable): adapter throws typed PortException
+      // để circuit breaker đếm (errorFilter chỉ tính infra, 4xx thì adapter đã trả
+      // reason chứ không throw). Map về FE shape ở đây — user thấy "gửi thất bại",
+      // không phải 5xx crash. Lỗi khác (PortNotRegistered = bug) vẫn rethrow.
+      if (e instanceof PortException) {
+        return { sent: false, reason: 'server-error' };
+      }
+      throw e;
+    }
   }
 
   /** GET /call-center/messages — the customer's active chat thread (history + staff replies). */
