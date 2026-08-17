@@ -212,9 +212,9 @@ export class AuthController {
     const user = rows[0];
 
     // Single-source: `linked` + `customerId` both derive from the verified binding row
-    // (customer_bindings.status='verified'), NOT the legacy users.customerId column (set by
-    // check-registration phone-match, bypassing bill-secret proof). customerId is decrypted from
-    // the binding cipher (same path as BindingVerifiedGuard) — null when no binding.
+    // (customer_bindings.status='verified'). The legacy users.customer_id column (proof-less
+    // phone-match) was DROPPED in migration 0008 — the binding cipher (decrypted here, same
+    // path as BindingVerifiedGuard) is the ONLY source. null when no binding.
     const bindingRows = await this.db
       .select({
         id: customerBindingsTable.id,
@@ -262,11 +262,13 @@ export class AuthController {
    * Match the authenticated user against Customer 360 by phone — called by the
    * mobile app right after OTP to decide routing: a matched (existing) customer
    * goes straight to the dashboard; an unmatched user is shown the
-   * "Bạn chưa đăng ký tài khoản" screen. On a match, links the customer and sets
-   * profile_status='complete' so the limited-mode gate opens.
+   * "Bạn chưa đăng ký tài khoản" screen.
    *
-   * Synchronous stand-in for the async (RabbitMQ) identity-resolution event path
-   * — same port method (`customer-profile find-by-phone`).
+   * READ-ONLY — does NOT advance profile_status: phone-match bypasses the bill-secret
+   * proof, so 'complete' here was a proof-less signal (writer removed together with
+   * the users.customer_id drop in 0008 — binding là nguồn customerId duy nhất).
+   * profile_status is owned by the identity-resolution event path (async, chưa build);
+   * this endpoint (its synchronous stand-in) returns the user's ACTUAL current status.
    */
   @SkipBindingVerified()
   @Post('check-registration')
@@ -276,14 +278,18 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Authentication required' })
   async checkRegistration(@CurrentUser('id') userId: string) {
     const userRows = await this.db
-      .select({ phoneNumber: usersTable.phoneNumber })
+      .select({
+        phoneNumber: usersTable.phoneNumber,
+        profileStatus: usersTable.profileStatus,
+      })
       .from(usersTable)
       .where(eq(usersTable.id, userId))
       .limit(1);
     const phone = userRows[0]?.phoneNumber ?? null;
+    const profileStatus = userRows[0]?.profileStatus ?? 'incomplete';
 
     if (!phone) {
-      return { registered: false, profileStatus: 'incomplete' as const };
+      return { registered: false, profileStatus };
     }
 
     // Wire: when CUSTOMER_SERVICE_URL is set, resolve phone against the REAL
@@ -293,25 +299,14 @@ export class AuthController {
       : await this.resolveFromMock(phone);
 
     if (customer) {
-      await this.db
-        .update(usersTable)
-        .set({
-          profileStatus: 'complete',
-          updatedAt: new Date(),
-        })
-        .where(eq(usersTable.id, userId));
       // customerId KHÔNG vào log (plaintext id); user dạng hash (PII log remediation).
       this.logger.log(
         `check-registration: matched customer for user ${this.pii.hashForLog(userId)}`,
       );
-      return {
-        registered: true,
-        profileStatus: 'complete' as const,
-        customerId: customer.customerId,
-      };
+      return { registered: true, profileStatus, customerId: customer.customerId };
     }
 
-    return { registered: false, profileStatus: 'incomplete' as const };
+    return { registered: false, profileStatus };
   }
 
   /**
