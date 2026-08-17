@@ -80,8 +80,12 @@ describe('Auth Contract Tests', () => {
   // ── POST /auth/check-registration ───────────────────────────────────────
 
   describe('check-registration — contract shape', () => {
-    it('should return {registered:true, profileStatus:"complete", customerId} when phone matches', async () => {
-      mockDb = createMockDb({ phoneNumber: '+84901234567' });
+    // profileStatus 'complete' writer removed (0008 dropped users.customer_id — closing
+    // single-source). check-reg is READ-ONLY: returns the user's ACTUAL status (here
+    // 'incomplete' — matched but identity not yet captured by the event path) and
+    // writes nothing — no proof-less 'complete' is fabricated.
+    it('should return {registered:true} + ACTUAL profileStatus (read-only, no DB write) when phone matches', async () => {
+      mockDb = createMockDb({ phoneNumber: '+84901234567', profileStatus: 'incomplete' });
       mockPortRegistry.execute.mockResolvedValue({
         data: { ...MOCK_CUSTOMER, customerId: 'QN-0912345' },
       });
@@ -92,13 +96,15 @@ describe('Auth Contract Tests', () => {
 
       expect(result).toEqual({
         registered: true,
-        profileStatus: 'complete',
+        profileStatus: 'incomplete',
         customerId: 'QN-0912345',
       });
+      // Locks the cleanup: check-reg must NOT write profile_status (proof-less writer gone).
+      expect(mockDb.update).not.toHaveBeenCalled();
     });
 
-    it('should return {registered:false, profileStatus:"incomplete"} when no match', async () => {
-      mockDb = createMockDb({ phoneNumber: '+84900000000' });
+    it('should return {registered:false} + actual profileStatus when no match', async () => {
+      mockDb = createMockDb({ phoneNumber: '+84900000000', profileStatus: 'incomplete' });
       mockPortRegistry.execute.mockResolvedValue({ data: null });
 
       controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any, mockPii);
@@ -166,7 +172,7 @@ describe('Auth Contract Tests', () => {
       // Legacy users.customerId (set by check-registration phone-match) is no longer read —
       // customerId derives from the binding cipher. No binding → null, even if the legacy column held a value.
       mockDb = createMockDbForMe(
-        { id: 'u1', fullName: 'A', cccd: null, customerId: 'QN-0912345', profileStatus: 'complete' },
+        { id: 'u1', fullName: 'A', cccd: null, profileStatus: 'complete' }, // (customer_id dropped 0008)
         null,
       ) as any;
       controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any, mockPii);
@@ -180,7 +186,7 @@ describe('Auth Contract Tests', () => {
 
     it('linked=true + customerId decrypted from binding cipher', async () => {
       mockDb = createMockDbForMe(
-        { id: 'u1', fullName: 'A', cccd: null, customerId: null, profileStatus: 'incomplete' },
+        { id: 'u1', fullName: 'A', cccd: null, profileStatus: 'incomplete' },
         { id: 'b1', customerIdCipher: 'QN-0912345-cipher' },
       ) as any;
       controller = new AuthController({} as any, mockPortRegistry as any, mockDb as any, { get: () => undefined } as any, mockPii);
