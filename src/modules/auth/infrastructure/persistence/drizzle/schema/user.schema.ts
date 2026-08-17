@@ -68,8 +68,8 @@ export const usersTable = pgTable(
     image: varchar('image', { length: 1024 }),
     role: userRoleEnum('role').default('customer'),
     status: userStatusEnum('status').default('active'),
-    // Customer 360 link (mã KH) — set when matched to a customer record (event or manual)
-    customerId: varchar('customer_id', { length: 128 }),
+    // (customer_id DROPPED in 0008 — proof-less phone-match column; the verified
+    //  binding's encrypted customerId (binding.schema) is the single source.)
     // ── New-user identity (MVP) ───────────────────────────────────────────────
     // Collected via event (existing-customer match) or manual complete-profile screen.
     fullName: varchar('full_name', { length: 255 }),

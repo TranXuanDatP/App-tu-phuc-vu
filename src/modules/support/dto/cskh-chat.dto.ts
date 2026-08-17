@@ -9,10 +9,18 @@ export const SendMessageSchema = z.object({
 });
 export type SendMessageRequest = z.infer<typeof SendMessageSchema>;
 
+/** Vì sao gửi thất bại (operational signal cho FE + log):
+ * - unauthorized: receiver từ chối chữ ký (401/403) — secret lệch 2 phía.
+ * - config: CSKH_WEBHOOK_URL set nhưng CSKH_WEBHOOK_HMAC_SECRET thiếu.
+ * - server-error: infra (5xx/timeout/unreachable) — adapter throw typed exception
+ *   (circuit breaker đếm), service map về shape này. */
+export type SendMessageFailureReason = 'unauthorized' | 'config' | 'server-error';
+
 export interface SendMessageResult {
   sent: boolean;
   conversationId?: string;
   messageId?: string;
+  reason?: SendMessageFailureReason;
 }
 
 /** One chat message in the customer↔staff thread (mirrors omnichannel messages). */
