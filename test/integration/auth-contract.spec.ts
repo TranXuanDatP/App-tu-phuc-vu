@@ -43,7 +43,10 @@ function createMockDbForMe(userRow: object | null, bindingRow: object | null) {
 }
 
 /** Mock PiiEncryptionService — identity decrypt (returns cipher as-is) for getMe tests. */
-const mockPii = { decryptIfNeeded: jest.fn((c: string | null | undefined) => c ?? null) } as any;
+const mockPii = {
+  decryptIfNeeded: jest.fn((c: string | null | undefined) => c ?? null),
+  hashForLog: jest.fn(() => 'abcd1234'), // PII log remediation — hash 8-char
+} as any;
 
 const VALID_REGISTER_BODY = {
   fullName: 'Test User',

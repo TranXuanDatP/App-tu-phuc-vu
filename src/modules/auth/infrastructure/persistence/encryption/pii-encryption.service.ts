@@ -97,6 +97,17 @@ export class PiiEncryptionService {
       .digest('hex');
   }
 
+  /**
+   * Short deterministic hash cho LOG lines (raw userId/customerId không bao giờ
+   * vào log). 8 hex chars (32 bit) của blind-index HMAC — cùng derived key như
+   * hashForLookup, không secret mới. Correlation-grade (đủ match trong 1 trace/
+   * window), KHÔNG collision-proof — widen slice sau nếu forensics cần unique.
+   * Convention call-site: `user=${pii.hashForLog(userId)}` → "user=a1b2c3d4".
+   */
+  hashForLog(plaintext: string): string {
+    return this.hashForLookup(plaintext).slice(0, 8);
+  }
+
   // =========================================================================
   // Convenience Methods
   // =========================================================================

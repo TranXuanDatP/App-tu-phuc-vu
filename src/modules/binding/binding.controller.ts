@@ -13,6 +13,7 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  Ip,
 } from '@nestjs/common';
 import { SkipBindingVerified } from '@modules/binding/decorators/skip-binding-verified.decorator';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody, ApiResponse } from '@nestjs/swagger';
@@ -45,8 +46,11 @@ export class BindingController {
   async bindInit(
     @CurrentUser('id') userId: string,
     @CurrentUser('sessionId') sessionId: string,
+    @Headers('x-device-id') deviceHeader?: string,
+    @Ip() ip?: string,
   ) {
-    return this.bindingService.bindInit(userId, sessionId);
+    // deviceInfo + ip: audit context cho binding_audit (A1.5) — không đổi response.
+    return this.bindingService.bindInit(userId, sessionId, deviceHeader ?? null, ip ?? null);
   }
 
   /**
@@ -78,6 +82,7 @@ export class BindingController {
     @CurrentUser('sessionId') sessionId: string,
     @Body() body: unknown,
     @Headers('x-device-id') deviceHeader?: string,
+    @Ip() ip?: string,
   ) {
     const parsed = BindSchema.safeParse(body);
     if (!parsed.success) {
@@ -88,6 +93,7 @@ export class BindingController {
       sessionId,
       parsed.data,
       deviceHeader ?? null,
+      ip ?? null,
     );
   }
 
@@ -110,6 +116,7 @@ export class BindingController {
     @CurrentUser('sessionId') sessionId: string,
     @Body() body: unknown,
     @Headers('x-device-id') deviceHeader?: string,
+    @Ip() ip?: string,
   ) {
     const parsed = RegisterSchema.safeParse(body);
     if (!parsed.success) {
@@ -121,6 +128,7 @@ export class BindingController {
       sessionId,
       { fullName, classification, address, email: email ?? null },
       deviceHeader ?? null,
+      ip ?? null,
     );
   }
 }

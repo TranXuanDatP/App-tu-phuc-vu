@@ -42,11 +42,14 @@ function mockDb(selectResults: any[][]) {
 describe('BindingService.bindRegister (register→bind, resolve-gated)', () => {
   let cache: MemoryCacheService;
   let rateLimiter: BindingRateLimiter;
-  const pii = { encryptIfNeeded: jest.fn((v: string) => Buffer.from(v).toString('base64')) };
+  const pii = {
+    encryptIfNeeded: jest.fn((v: string) => Buffer.from(v).toString('base64')),
+    hashForLog: jest.fn(() => 'abcd1234'), // PII log remediation — hash 8-char
+  };
 
   beforeEach(() => {
     cache = new MemoryCacheService({ cleanupInterval: 0 });
-    rateLimiter = new BindingRateLimiter(cache as any);
+    rateLimiter = new BindingRateLimiter(cache as any, pii as any);
     pii.encryptIfNeeded.mockClear();
   });
 

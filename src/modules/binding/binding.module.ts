@@ -23,6 +23,7 @@ import { BindingVerifiedGuard } from './guards/binding-verified.guard';
 import { BindingService } from './binding.service';
 import { BindingController } from './binding.controller';
 import { BindingRateLimiter } from './binding-rate-limiter.service';
+import { BindingAuditRepository } from './infrastructure/persistence/binding-audit.repository';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { BindingRateLimiter } from './binding-rate-limiter.service';
   controllers: [BindingController],
   providers: [
     BindingService,
+    BindingAuditRepository,
     BindingRateLimiter,
     BindingVerifiedGuard,
     { provide: APP_GUARD, useExisting: BindingVerifiedGuard },
