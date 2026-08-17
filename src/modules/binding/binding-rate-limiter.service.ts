@@ -16,8 +16,9 @@
  * Backed by ICacheService (Redis in prod, MemoryCacheService in dev). Counters use a
  * read-modify-write of a windowed {count, since} object — backend-agnostic and
  * deterministic in tests. The non-atomic RMW is an acceptable approximation at the
- * BFF brute-force layer; Redis narrows the race. Lockout events are warn-logged (a
- * full audit table is A1.5, out of this batch).
+ * BFF brute-force layer; Redis narrows the race. Lockout audit rows (A1.5, binding_audit)
+ * do BindingService ghi (caller giữ ip/deviceInfo); limiter chỉ warn-log — log user
+ * dạng hash (PII không vào log) và không phụ thuộc DB.
  *
  * On a successful bind, the per-(userId,customerRef) AND per-user TOTAL counters are
  * cleared (success = strong "not an attacker" signal; keeping the total would lock a
@@ -27,6 +28,8 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import { CACHE_SERVICE_TOKEN } from '@core/constants/tokens';
 import type { ICacheService } from '@core';
+import { PII_ENCRYPTION_SERVICE_TOKEN } from '@modules/auth/constants/tokens';
+import { PiiEncryptionService } from '@modules/auth/infrastructure/persistence/encryption/pii-encryption.service';
 
 export type LockReason = 'user_ref' | 'customer_ref' | 'session';
 
@@ -58,7 +61,10 @@ export class BindingRateLimiter {
   private readonly USER_TOTAL_WINDOW_SEC = 15 * 60; // 15 min
   private readonly USER_TOTAL_LOCK_SEC = 15 * 60; // 15 min
 
-  constructor(@Inject(CACHE_SERVICE_TOKEN) private readonly cache: ICacheService) {}
+  constructor(
+    @Inject(CACHE_SERVICE_TOKEN) private readonly cache: ICacheService,
+    @Inject(PII_ENCRYPTION_SERVICE_TOKEN) private readonly pii: PiiEncryptionService,
+  ) {}
 
   /** Is this (userId, customerRef) currently locked under any ceiling? */
   async checkLocked(userId: string, customerRef: string): Promise<LockState> {
@@ -94,7 +100,7 @@ export class BindingRateLimiter {
       );
       await this.cache.delete(this.userFailKey(userId, customerRef));
       this.logger.warn(
-        `binding locked per-(user,customer) user=${userId} ref=${customerRef} after ${userCount} fails`,
+        `binding locked per-(user,customer) user=${this.pii.hashForLog(userId)} ref=${customerRef} after ${userCount} fails`,
       );
       userRefArmed = true;
     }
@@ -126,7 +132,7 @@ export class BindingRateLimiter {
       await this.cache.set(this.userTotalLockKey(userId), 1, this.USER_TOTAL_LOCK_SEC);
       await this.cache.delete(this.userTotalFailKey(userId));
       this.logger.warn(
-        `binding locked per-user TOTAL user=${userId} after ${totalCount} fails (across refs)`,
+        `binding locked per-user TOTAL user=${this.pii.hashForLog(userId)} after ${totalCount} fails (across refs)`,
       );
       sessionArmed = true;
     }

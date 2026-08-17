@@ -49,6 +49,7 @@ describe('BindingVerifiedGuard (OPT-OUT — deny by default)', () => {
     cache = new MemoryCacheService({ cleanupInterval: 0 });
     pii = {
       decryptIfNeeded: jest.fn((c: string | null) => (c ? unb64(c) : null)),
+      hashForLog: jest.fn(() => 'abcd1234'),
     };
   });
 

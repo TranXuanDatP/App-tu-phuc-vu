@@ -140,7 +140,7 @@ export class AuthController {
       throw new ValidationException(parsed.error.message);
     }
 
-    this.logger.log(`Link provider ${parsed.data.providerType} to user ${userId}`);
+    this.logger.log(`Link provider ${parsed.data.providerType} to user ${this.pii.hashForLog(userId)}`);
 
     // Provider linking is performed by better-auth's OAuth flow: the App redirects the
     // user to the provider's authorization URL, and better-auth links the provider to
@@ -174,7 +174,7 @@ export class AuthController {
       throw new ValidationException(parsed.error.message);
     }
 
-    this.logger.log(`Unlink provider ${parsed.data.providerType} from user ${userId}`);
+    this.logger.log(`Unlink provider ${parsed.data.providerType} from user ${this.pii.hashForLog(userId)}`);
 
     // better-auth exposes account unlink via its API; the App calls better-auth directly.
     return {
@@ -300,8 +300,9 @@ export class AuthController {
           updatedAt: new Date(),
         })
         .where(eq(usersTable.id, userId));
+      // customerId KHÔNG vào log (plaintext id); user dạng hash (PII log remediation).
       this.logger.log(
-        `check-registration: matched ${customer.customerId} for user ${userId}`,
+        `check-registration: matched customer for user ${this.pii.hashForLog(userId)}`,
       );
       return {
         registered: true,

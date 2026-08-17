@@ -46,14 +46,21 @@ describe('BindingService (A1.3 + A1.4)', () => {
   beforeEach(() => {
     // cleanupInterval:0 so no lingering timer keeps the jest process alive.
     cache = new MemoryCacheService({ cleanupInterval: 0 });
-    rateLimiter = new BindingRateLimiter(cache);
+    pii = {
+      encryptIfNeeded: jest.fn((v: string) => Buffer.from(v).toString('base64')),
+      hashForLog: jest.fn(() => 'abcd1234'), // PII log remediation — hash 8-char
+    };
+    rateLimiter = new BindingRateLimiter(cache, pii as any);
     customerService = {
       resolve: jest.fn(),
       verify: jest.fn(),
       profile: jest.fn(),
       resolveChannel: jest.fn(),
     };
-    pii = { encryptIfNeeded: jest.fn((v: string) => Buffer.from(v).toString('base64')) };
+    pii = {
+      encryptIfNeeded: jest.fn((v: string) => Buffer.from(v).toString('base64')),
+      hashForLog: jest.fn(() => 'abcd1234'), // PII log remediation — hash 8-char
+    };
   });
 
   // ── bind-init (Fix 1: session phone, server-side) ──────────────────────────
@@ -72,7 +79,8 @@ describe('BindingService (A1.3 + A1.4)', () => {
         cache as any,
         pii as any,
         rateLimiter,
-      );
+        { record: jest.fn() } as any,
+        );
 
       const result = await service.bindInit('user-1', SESSION_ID);
 
@@ -91,7 +99,8 @@ describe('BindingService (A1.3 + A1.4)', () => {
         cache as any,
         pii as any,
         rateLimiter,
-      );
+        { record: jest.fn() } as any,
+        );
       expect(await service.bindInit('user-1', SESSION_ID)).toEqual({ status: 'none' });
       expect(customerService.resolve).not.toHaveBeenCalled();
     });
@@ -106,7 +115,8 @@ describe('BindingService (A1.3 + A1.4)', () => {
         cache as any,
         pii as any,
         rateLimiter,
-      );
+        { record: jest.fn() } as any,
+        );
       await expect(
         service.bind('user-1', SESSION_ID, VALID_BODY, null),
       ).rejects.toThrow(ValidationException);
@@ -126,7 +136,8 @@ describe('BindingService (A1.3 + A1.4)', () => {
         cache as any,
         pii as any,
         rateLimiter,
-      );
+        { record: jest.fn() } as any,
+        );
       await service.bindInit('user-1', SESSION_ID); // seeds REF-001 for this session
 
       await expect(
@@ -156,7 +167,8 @@ describe('BindingService (A1.3 + A1.4)', () => {
         cache as any,
         pii as any,
         rateLimiter,
-      );
+        { record: jest.fn() } as any,
+        );
       // Seed the bind-init token directly — bindInit's session-phone read is covered
       // by the bindInit tests above; here we isolate bind() against a seeded session.
       await cache.set(
@@ -207,7 +219,8 @@ describe('BindingService (A1.3 + A1.4)', () => {
         cache as any,
         pii as any,
         rateLimiter,
-      );
+        { record: jest.fn() } as any,
+        );
       await service.bindInit('user-1', SESSION_ID);
 
       // Two fails are tolerated as {bound:false}...

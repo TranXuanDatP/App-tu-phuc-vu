@@ -18,6 +18,8 @@ describe('BindingRateLimiter (A1.4 — triple ceiling)', () => {
   beforeEach(() => {
     rl = new BindingRateLimiter(
       new MemoryCacheService({ cleanupInterval: 0 }) as any,
+      // PII log remediation: limiter warn-log user dạng hash 8-char.
+      { hashForLog: jest.fn(() => 'abcd1234') } as any,
     );
   });
 
@@ -129,4 +131,16 @@ describe('BindingRateLimiter (A1.4 — triple ceiling)', () => {
     // 5th since clear → session-lock.
     expect((await rl.recordFailure('u1', 'REF-C')).lockedNow).toBe(true);
   });
+
+  it('PII: lockout warn-log ghi user dạng HASH, không phải raw userId', async () => {
+    const warnSpy = jest.spyOn((rl as any).logger, 'warn').mockImplementation(() => undefined);
+    await rl.recordFailure('u-raw-secret-9', 'REF-001');
+    await rl.recordFailure('u-raw-secret-9', 'REF-001');
+    await rl.recordFailure('u-raw-secret-9', 'REF-001'); // 3rd fail → arm → warn
+    const msgs = warnSpy.mock.calls.map((c) => String(c[0])).join(' | ');
+    expect(msgs).toContain('user=abcd1234');
+    expect(msgs).not.toContain('u-raw-secret-9');
+    warnSpy.mockRestore();
+  });
+
 });
