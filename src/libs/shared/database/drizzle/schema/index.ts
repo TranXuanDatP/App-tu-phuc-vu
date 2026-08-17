@@ -25,6 +25,7 @@ import { sessionsTable } from '@modules/auth/infrastructure/persistence/drizzle/
 import { verificationTable } from '@modules/auth/infrastructure/persistence/drizzle/schema/verification.schema';
 
 import { customerBindingsTable } from '@modules/binding/infrastructure/persistence/drizzle/schema/binding.schema';
+import { bindingAuditTable } from '@modules/binding/infrastructure/persistence/drizzle/schema/binding-audit.schema';
 
 export const schema = {
   outboxTable,
@@ -39,4 +40,6 @@ export const schema = {
   verificationTable,
   // Binding module table (customer binding proof)
   customerBindingsTable,
+  // Binding audit (A1.5 — append-only forensic log)
+  bindingAuditTable,
 };

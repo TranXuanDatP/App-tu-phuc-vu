@@ -216,4 +216,21 @@ describe('PiiEncryptionService', () => {
       expect(() => service2.decrypt(encrypted1)).toThrow();
     });
   });
+
+  describe('hashForLog (PII log remediation — 8 hex chars)', () => {
+    it('deterministic + đúng 8 ký tự hex thường', () => {
+      const a = service.hashForLog('user-abc');
+      const b = service.hashForLog('user-abc');
+      expect(a).toBe(b);
+      expect(a).toMatch(/^[0-9a-f]{8}$/);
+    });
+
+    it('khác nhau theo input + là prefix của hashForLookup (cùng derived key)', () => {
+      const a = service.hashForLog('user-abc');
+      const c = service.hashForLog('user-xyz');
+      expect(a).not.toBe(c);
+      expect(service.hashForLookup('user-abc').startsWith(a)).toBe(true);
+    });
+  });
+
 });

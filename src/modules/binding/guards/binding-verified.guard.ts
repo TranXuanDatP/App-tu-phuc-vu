@@ -106,7 +106,7 @@ export class BindingVerifiedGuard implements CanActivate {
     if (!customerId) {
       // A verified binding must have a customerId. Missing/undecryptable = data integrity.
       this.logger.error(
-        `binding verified but customerId missing/undecryptable for user ${userId}`,
+        `binding verified but customerId missing/undecryptable for user ${this.pii.hashForLog(userId)}`,
       );
       throw new HttpException(
         {
@@ -160,7 +160,7 @@ export class BindingVerifiedGuard implements CanActivate {
     };
     // Cache CIPHERTEXT only (never the decrypted id).
     await this.cache.set(key, entry, this.CACHE_TTL_SEC).catch((err: unknown) => {
-      this.logger.warn(`failed to warm binding cache for ${userId}: ${(err as Error).message}`);
+      this.logger.warn(`failed to warm binding cache for ${this.pii.hashForLog(userId)}: ${(err as Error).message}`);
     });
     return entry;
   }

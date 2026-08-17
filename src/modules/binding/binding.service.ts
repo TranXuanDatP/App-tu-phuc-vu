@@ -37,6 +37,10 @@ import type {
   ResolveResult,
 } from '@modules/account/clients/customer-service.client';
 import { customerBindingsTable } from './infrastructure/persistence/drizzle/schema/binding.schema';
+import {
+  BindingAuditRepository,
+  type BindingAuditEntry,
+} from './infrastructure/persistence/binding-audit.repository';
 import { BindingRateLimiter } from './binding-rate-limiter.service';
 import type { BindBody, BindResult } from './dto/bind.dto';
 
@@ -54,28 +58,63 @@ export class BindingService {
     @Inject(CACHE_SERVICE_TOKEN) private readonly cache: ICacheService,
     @Inject(PII_ENCRYPTION_SERVICE_TOKEN) private readonly pii: PiiEncryptionService,
     private readonly rateLimiter: BindingRateLimiter,
+    private readonly auditRepo: BindingAuditRepository,
   ) {}
+
+  /**
+   * A1.5 — mọi mutation binding → 1 row audit. Insert failure phải KHÔNG làm hỏng
+   * bind UX (append-only forensic log: mất 1 row khi DB lỗi < chặn user bind xong).
+   * Ordering: success-path gọi SAU upsertVerified → không bao giờ có audit row mồ côi.
+   */
+  private async writeAudit(entry: BindingAuditEntry): Promise<void> {
+    try {
+      await this.auditRepo.record(entry);
+    } catch (err) {
+      this.logger.warn(
+        `binding_audit insert failed (${entry.action}): ${(err as Error).message}`,
+      );
+    }
+  }
 
   /**
    * POST /auth/bind-init — resolve the session phone server-side, stash the allowed
    * customerRefs for this session, return masked candidates for the user to pick.
    */
-  async bindInit(userId: string, sessionId: string): Promise<ResolveResult> {
+  async bindInit(
+    userId: string,
+    sessionId: string,
+    deviceInfo: string | null,
+    ip: string | null,
+  ): Promise<ResolveResult> {
     const phone = await this.getSessionPhone(userId);
     if (!phone) {
-      // No OTP-verified phone on the identity → nothing to resolve.
+      // No OTP-verified phone on the identity → nothing to resolve (no mutation
+      // attempt → no audit row — A1.5 decision).
       return { status: 'none' };
     }
 
     const result = await this.customerService.resolve(phone);
     // A1.5 audit — bind-init is the highest-attack-value surface (N-match disambiguation).
     // Log the resolve outcome so the N-match rate is measurable and the keep-Fix-3 vs
-    // deny-all decision can later be made on real numbers, not feel.
+    // deny-all decision can later be made on real numbers, not feel. user hash → PII
+    // never in logs (hashForLog).
     this.logger.log(
-      `bind-init resolve user=${userId} status=${result.status}` +
+      `bind-init resolve user=${this.pii.hashForLog(userId)} status=${result.status}` +
         (result.candidates ? ` N=${result.candidates.length}` : '') +
         (result.capped ? ' capped=true' : ''),
     );
+    await this.writeAudit({
+      userId,
+      customerRef: result.status === 'one' ? result.customerRef : null,
+      action: 'challenge_attempt',
+      success: true,
+      detail:
+        `resolve:${result.status}` +
+        (result.candidates ? ` N=${result.candidates.length}` : '') +
+        (result.capped ? ' capped' : ''),
+      ip,
+      deviceInfo,
+    });
     // Persist the resolve result keyed by sessionId so bind can validate customerRef
     // provenance (Fix 1). Single-use: deleted after a successful bind.
     await this.cache.set(this.initKey(sessionId), result, this.INIT_TTL_SEC);
@@ -92,18 +131,37 @@ export class BindingService {
     sessionId: string,
     body: BindBody,
     deviceInfo: string | null,
+    ip: string | null,
   ): Promise<BindResult> {
     // Fix 1: customerRef must originate from THIS session's bind-init resolve.
     const init = await this.cache.get<ResolveResult | null>(this.initKey(sessionId));
     if (!init) {
+      await this.writeAudit({
+        userId,
+        customerRef: body.customerRef,
+        action: 'bind',
+        success: false,
+        detail: 'init_expired',
+        ip,
+        deviceInfo,
+      });
       throw new ValidationException(
         'Phiên liên kết hết hạn hoặc chưa bắt đầu. Vui lòng thử lại.',
       );
     }
     if (!this.allowedRefs(init).includes(body.customerRef)) {
       this.logger.warn(
-        `bind: customerRef not in session resolve — rejecting (user=${userId})`,
+        `bind: customerRef not in session resolve — rejecting (user=${this.pii.hashForLog(userId)})`,
       );
+      await this.writeAudit({
+        userId,
+        customerRef: body.customerRef,
+        action: 'bind',
+        success: false,
+        detail: 'foreign_ref_rejected',
+        ip,
+        deviceInfo,
+      });
       throw new ValidationException('Khách hàng không hợp lệ cho phiên này.');
     }
 
@@ -113,6 +171,15 @@ export class BindingService {
     // code+details through (HttpException would strip them).
     const lock = await this.rateLimiter.checkLocked(userId, body.customerRef);
     if (lock.locked) {
+      await this.writeAudit({
+        userId,
+        customerRef: body.customerRef,
+        action: 'lockout',
+        success: false,
+        detail: `lockout_hit:${lock.reason ?? 'user_ref'}`,
+        ip,
+        deviceInfo,
+      });
       throw new LockoutException(lock.reason ?? 'user_ref', lock.retryAfterSec ?? 900);
     }
 
@@ -124,6 +191,18 @@ export class BindingService {
 
     if (!verdict.verified) {
       const fail = await this.rateLimiter.recordFailure(userId, body.customerRef);
+      // Một row / attempt: ceiling trip → row lockout; ngược lại verify_failed.
+      await this.writeAudit({
+        userId,
+        customerRef: body.customerRef,
+        action: fail.lockedNow ? 'lockout' : 'bind',
+        success: false,
+        detail: fail.lockedNow
+          ? `lockout:${fail.reason ?? 'user_ref'} retrySec:${fail.retryAfterSec ?? 900}`
+          : 'verify_failed',
+        ip,
+        deviceInfo,
+      });
       if (fail.lockedNow) {
         throw new LockoutException(fail.reason ?? 'user_ref', fail.retryAfterSec ?? 900);
       }
@@ -144,6 +223,15 @@ export class BindingService {
     });
     await this.rateLimiter.clearFailures(userId, body.customerRef);
     await this.cache.delete(this.initKey(sessionId)); // single-use token
+    await this.writeAudit({
+      userId,
+      customerRef: body.customerRef,
+      action: 'bind',
+      success: true,
+      detail: `factor:${body.secretType}`,
+      ip,
+      deviceInfo,
+    });
 
     // Warm the guard's binding cache so the next customer-data request is a cache HIT.
     // Store CIPHERTEXT only (A2 D3 / redline #1) — the guard decrypts per-request.
@@ -164,8 +252,10 @@ export class BindingService {
         );
       });
 
+    // customerId KHÔNG xuất hiện trong log (plaintext id — encryption-at-rest bị
+    // log phá vỡ nếu in ra; dùng customerRef làm handle + hash user).
     this.logger.log(
-      `binding verified: user=${userId} customerRef=${body.customerRef} customerId=${profile.customerId}`,
+      `binding verified: user=${this.pii.hashForLog(userId)} customerRef=${body.customerRef}`,
     );
     return { bound: true, customerId: profile.customerId };
   }
@@ -184,6 +274,7 @@ export class BindingService {
     sessionId: string,
     profile: CreateCustomerRequest,
     deviceInfo: string | null,
+    ip: string | null,
   ): Promise<BindResult> {
     const phone = await this.getSessionPhone(userId);
     if (!phone) {
@@ -195,6 +286,14 @@ export class BindingService {
     // Reject point 1 — re-resolve server-side (do NOT trust a stale bind-init 'none').
     const resolve = await this.customerService.resolve(phone);
     if (resolve.status !== 'none') {
+      await this.writeAudit({
+        userId,
+        action: 'register',
+        success: false,
+        detail: `re_resolve:${resolve.status}`,
+        ip,
+        deviceInfo,
+      });
       throw new ConflictException(
         'Khách hàng đã tồn tại cho số này — dùng luồng liên kết (bind), không đăng ký mới.',
         'CUSTOMER_EXISTS_USE_BIND',
@@ -209,8 +308,16 @@ export class BindingService {
     } catch (err) {
       if (err instanceof ConflictException) {
         this.logger.warn(
-          `bindRegister: create conflict (race tail) for user ${userId} → reroute bind`,
+          `bindRegister: create conflict (race tail) for user ${this.pii.hashForLog(userId)} → reroute bind`,
         );
+        await this.writeAudit({
+          userId,
+          action: 'register',
+          success: false,
+          detail: 'create_conflict',
+          ip,
+          deviceInfo,
+        });
         throw new ConflictException(
           'Khách hàng vừa được tạo cho số này — dùng luồng liên kết (bind).',
           'CUSTOMER_EXISTS_USE_BIND',
@@ -231,6 +338,15 @@ export class BindingService {
       now,
     });
     await this.cache.delete(this.initKey(sessionId)); // consume any pending init token
+    await this.writeAudit({
+      userId,
+      customerRef: created.customerRef,
+      action: 'register',
+      success: true,
+      detail: 'factor:self_registration',
+      ip,
+      deviceInfo,
+    });
     await this.cache
       .set(
         this.bindKey(userId),
@@ -246,8 +362,9 @@ export class BindingService {
         this.logger.warn(`failed to warm binding cache: ${(err as Error).message}`);
       });
 
+    // customerId KHÔNG vào log (xem bind) — customerRef là handle + hash user.
     this.logger.log(
-      `bindRegister: created+bound user=${userId} customer=${created.customerId} (${created.customerRef})`,
+      `bindRegister: created+bound user=${this.pii.hashForLog(userId)} customerRef=${created.customerRef}`,
     );
     return { bound: true, customerId: created.customerId };
   }
