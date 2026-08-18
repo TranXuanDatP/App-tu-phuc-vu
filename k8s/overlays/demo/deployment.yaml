@@ -24,7 +24,7 @@ spec:
         runAsNonRoot: true   # distroless :nonroot → UID 65532
       containers:
         - name: app
-          image: app-tu-phuc-vu:0.1.0
+          image: app-tu-phuc-vu:0.4.0
           imagePullPolicy: Never
           envFrom:
             - configMapRef: { name: app-tu-phuc-vu-config }
