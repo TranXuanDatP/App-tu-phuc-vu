@@ -71,6 +71,13 @@
       "when": 1787110000000,
       "tag": "0009_chat_outbox",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787280000000,
+      "tag": "0010_mock_customer_store",
+      "breakpoints": true
     }
   ]
 }

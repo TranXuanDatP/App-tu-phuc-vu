@@ -1,19 +1,24 @@
 /**
  * Mock adapter for the customer-profile port (downstream Account/Customer service).
  *
- * Mock-first + STATEFUL: customers created via `create-customer` are kept in an
- * in-memory Map (the mock Customer 360 stand-in) and served back by `get-profile` /
- * `find-by-phone` so the app registration flow works end-to-end within a session.
- * Reads for any other customerId fall back to the JSON fixtures (super.execute).
+ * Mock-first + STATEFUL + DURABLE: customers created via `create-customer` live in
+ * the `mock_customer_store` table (migration 0010) — they survive BFF restarts.
+ * (The old in-memory Map reset on every restart, so get-profile fell back to the
+ * shared JSON fixture and a freshly-registered user saw SOMEONE ELSE's profile —
+ * bug caught 2026-08-21.)
  *
- * The store resets on process restart — acceptable for dev. When the real
- * Customer 360 service is ready, replace this adapter with an InternalAdapterBase
- * subclass (passed as the 2nd arg of portRegistry.register) — the `create-customer`
- * port method becomes an HTTP POST, zero endpoint change. Flip
+ * Fixture fallback is now STRICT: only the known seed customerId(s) serve fixture
+ * data; any other unknown id returns null. Unknown ≠ "show the fixture customer".
+ *
+ * When the real Customer 360 service is ready, replace this adapter with an
+ * InternalAdapterBase subclass (2nd arg of portRegistry.register) — flip
  * config/api-endpoints.yaml `adapter: live`.
  */
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
+import { desc, eq } from 'drizzle-orm';
 import { MockAdapterBase } from '@shared/port/mock-adapter.base';
+import { type DrizzleDB } from '@shared';
+import { DATABASE_WRITE_TOKEN } from '@core/constants/tokens';
 import {
   CustomerProfileSchema,
   CreateCustomerRequestSchema,
@@ -22,26 +27,26 @@ import {
   UpdateProfileResponseSchema,
 } from '../dto/customer-profile.dto';
 import type { CustomerProfileResponse } from '../dto/customer-profile.dto';
-
-// Module-level counter for generated customer IDs (APP-NNNNNN). Stable across
-// adapter instances within a process.
-let appCustomerCounter = 0;
+import { mockCustomerStoreTable } from '../infrastructure/persistence/drizzle/schema/mock-customer-store.schema';
 
 // Normalized phones of pre-seeded "existing customers" (the find-by-phone
 // fixture, customerId QN-0912345). Login with any of these → recognized as an
-// existing customer (dashboard full with mock data); any other phone → no match
-// → the app shows the "Bạn chưa đăng ký tài khoản" screen. App-registered
-// customers (via create-customer) also match through phoneIndex.
+// existing customer; any other phone → no match → "Bạn chưa đăng ký tài khoản".
 const EXISTING_CUSTOMER_PHONES = new Set(['987654321', '901234567']);
+
+// CustomerId của khách seed — DUY NHẤT các id này được phép fallback về fixture.
+// QN-0912345 = id mà binding mock (REF-001) cấp; USR-20240101-0001 = id nội bộ
+// của chính fixture. Id khác không nằm trong mock_customer_store → null
+// (trước đây mọi id lạ đều nhận fixture = lộ hồ sơ khách khác cho user lạ).
+const FIXTURE_CUSTOMER_IDS = new Set(['QN-0912345', 'USR-20240101-0001']);
+
+type StoreRow = typeof mockCustomerStoreTable.$inferSelect;
 
 @Injectable()
 export class MockCustomerProfileAdapter extends MockAdapterBase {
-  /** customerId → record, for customers created via create-customer. */
-  private readonly createdCustomers = new Map<string, CustomerProfileResponse>();
-  /** normalized phone → customerId, so find-by-phone resolves app-registered customers. */
-  private readonly phoneIndex = new Map<string, string>();
-
-  constructor() {
+  constructor(
+    @Inject(DATABASE_WRITE_TOKEN) private readonly db: DrizzleDB,
+  ) {
     super(
       'customer-profile',
       {
@@ -64,23 +69,28 @@ export class MockCustomerProfileAdapter extends MockAdapterBase {
       return this.createCustomer(params);
     }
 
-    // Serve app-registered customers first; fall back to fixtures for seed data.
     if (method === 'get-profile') {
       const byId = params.customerId as string | undefined;
-      if (byId && this.createdCustomers.has(byId)) {
-        return this.createdCustomers.get(byId);
+      if (!byId) return null;
+      const stored = await this.findByCustomerId(byId);
+      if (stored) return stored;
+      // Chỉ id seed được fixture; id lạ → null (không lộ hồ sơ người khác).
+      if (FIXTURE_CUSTOMER_IDS.has(byId)) {
+        // Fixture mang id nội bộ riêng (USR-…) khác id binding mock cấp (QN-…) —
+        // chuẩn hoá về id được yêu cầu để caller nhận profile đúng khóa của mình.
+        const fixture = (await super.execute(method, params)) as CustomerProfileResponse;
+        return { ...fixture, customerId: byId };
       }
+      return null;
     }
+
     if (method === 'find-by-phone') {
       const phone = params.phone as string | undefined;
-      if (phone) {
-        const norm = this.normalizePhone(phone);
-        const id = this.phoneIndex.get(norm);
-        if (id) return this.createdCustomers.get(id);
-        // One pre-seeded "existing customer" (the fixture) so the matched /
-        // existing-customer login branch is testable. Any OTHER phone → no
-        // match → "Bạn chưa đăng ký tài khoản".
-        if (EXISTING_CUSTOMER_PHONES.has(norm)) return super.execute(method, params);
+      if (!phone) return null;
+      const stored = await this.findByPhone(phone);
+      if (stored) return stored;
+      if (EXISTING_CUSTOMER_PHONES.has(this.normalizePhone(phone))) {
+        return super.execute(method, params);
       }
       return null;
     }
@@ -88,7 +98,38 @@ export class MockCustomerProfileAdapter extends MockAdapterBase {
     return super.execute(method, params);
   }
 
-  private createCustomer(params: Record<string, unknown>): CustomerProfileResponse {
+  private rowToRecord(row: StoreRow): CustomerProfileResponse {
+    return {
+      customerId: row.customerId,
+      fullName: row.fullName,
+      classification: row.classification as CustomerProfileResponse['classification'],
+      address: row.address as CustomerProfileResponse['address'],
+      contactInfo: (row.contactInfo ?? undefined) as CustomerProfileResponse['contactInfo'],
+      status: row.status as CustomerProfileResponse['status'],
+    };
+  }
+
+  private async findByCustomerId(customerId: string): Promise<CustomerProfileResponse | null> {
+    const rows = await this.db
+      .select()
+      .from(mockCustomerStoreTable)
+      .where(eq(mockCustomerStoreTable.customerId, customerId))
+      .limit(1);
+    return rows[0] ? this.rowToRecord(rows[0]) : null;
+  }
+
+  private async findByPhone(phone: string): Promise<CustomerProfileResponse | null> {
+    const rows = await this.db
+      .select()
+      .from(mockCustomerStoreTable)
+      .where(eq(mockCustomerStoreTable.phone, this.normalizePhone(phone)))
+      .limit(1);
+    return rows[0] ? this.rowToRecord(rows[0]) : null;
+  }
+
+  private async createCustomer(
+    params: Record<string, unknown>,
+  ): Promise<CustomerProfileResponse> {
     const parsed = CreateCustomerRequestSchema.safeParse(params);
     if (!parsed.success) {
       // Mock contract violation — surface it (the controller validates input too,
@@ -98,8 +139,7 @@ export class MockCustomerProfileAdapter extends MockAdapterBase {
       );
     }
     const p = parsed.data;
-    appCustomerCounter += 1;
-    const customerId = `APP-${String(appCustomerCounter).padStart(6, '0')}`;
+    const customerId = await this.nextCustomerId();
     const fullAddress = `${p.address.street}, ${p.address.ward}, ${p.address.district}, ${p.address.city}`;
     const record: CustomerProfileResponse = {
       customerId,
@@ -109,12 +149,29 @@ export class MockCustomerProfileAdapter extends MockAdapterBase {
       contactInfo: p.contactInfo,
       status: p.status,
     };
-    this.createdCustomers.set(customerId, record);
-    if (p.contactInfo.phone) {
-      this.phoneIndex.set(this.normalizePhone(p.contactInfo.phone), customerId);
-    }
+    await this.db.insert(mockCustomerStoreTable).values({
+      customerId,
+      phone: p.contactInfo.phone ? this.normalizePhone(p.contactInfo.phone) : null,
+      fullName: p.fullName,
+      classification: p.classification,
+      address: record.address as unknown as Record<string, unknown>,
+      contactInfo: (p.contactInfo ?? null) as Record<string, unknown> | null,
+      status: p.status,
+    });
     this.logger.log(`Mock create-customer → ${customerId} (${p.fullName})`);
     return record;
+  }
+
+  /** APP-NNNNNN — tiếp tục từ max trong store (không reset theo restart). */
+  private async nextCustomerId(): Promise<string> {
+    const rows = await this.db
+      .select({ customerId: mockCustomerStoreTable.customerId })
+      .from(mockCustomerStoreTable)
+      .orderBy(desc(mockCustomerStoreTable.customerId))
+      .limit(1);
+    const last = rows[0]?.customerId; // 'APP-000003'
+    const lastNum = last && /^APP-\d{6}$/.test(last) ? parseInt(last.slice(4), 10) : 0;
+    return `APP-${String(lastNum + 1).padStart(6, '0')}`;
   }
 
   private normalizePhone(phone: string): string {
