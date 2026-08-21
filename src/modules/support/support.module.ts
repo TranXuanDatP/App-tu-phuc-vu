@@ -9,10 +9,11 @@ import { SupportController } from './support.controller';
 import { SupportService } from './support.service';
 import { MockCallCenterAdapter } from './clients/call-center.client';
 import { CskhChatAdapter } from './clients/cskh-chat.client';
+import { ChatOutboxForwarder } from './chat-outbox.forwarder';
 
 @Module({
   controllers: [SupportController],
-  providers: [SupportService, MockCallCenterAdapter, CskhChatAdapter],
+  providers: [SupportService, ChatOutboxForwarder, MockCallCenterAdapter, CskhChatAdapter],
 })
 export class SupportModule implements OnModuleInit {
   constructor(

@@ -6,6 +6,9 @@ import { z } from 'zod';
 export const SendMessageSchema = z.object({
   userId: z.string().min(1),
   text: z.string().min(1).max(2000),
+  /** Forwarder truyền messageId của outbox row để retry idempotent (receiver dedupe).
+   * Client KHÔNG truyền — BFF tự sinh khi nhận tin mới. */
+  messageId: z.string().uuid().optional(),
 });
 export type SendMessageRequest = z.infer<typeof SendMessageSchema>;
 

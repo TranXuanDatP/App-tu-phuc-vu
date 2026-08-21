@@ -68,7 +68,7 @@ export class CskhChatAdapter implements IPortAdapter {
 
   async execute(method: string, params: Record<string, unknown>): Promise<unknown> {
     if (method === 'send-message') {
-      return this.sendMessage(params as { userId: string; text: string });
+      return this.sendMessage(params as { userId: string; text: string; messageId?: string });
     }
     if (method === 'get-conversation') {
       return this.getConversation(params as { userId: string });
@@ -79,9 +79,12 @@ export class CskhChatAdapter implements IPortAdapter {
   private async sendMessage({
     userId,
     text,
+    messageId: providedMessageId,
   }: {
     userId: string;
     text: string;
+    /** Outbox forwarder truyền messageId có sẵn để retry idempotent (receiver dedupe). */
+    messageId?: string;
   }): Promise<{ sent: boolean; conversationId?: string; messageId?: string; reason?: string }> {
     if (!this.appWebhookUrl) {
       this.logger.log(`[mock] chat userId=${userId} text="${text.slice(0, 40)}"`);
@@ -92,7 +95,8 @@ export class CskhChatAdapter implements IPortAdapter {
     }
     // randomUUID thay vì `app-${userId}-${Date.now()}`: bỏ pattern predictable +
     // same-millisecond collision (receiver dedupe theo messageId sẽ nuốt nhầm duplicate).
-    const messageId = randomUUID();
+    // Forwarder retry dùng lại messageId của outbox row — giữ id ổn định qua các lần thử.
+    const messageId = providedMessageId ?? randomUUID();
     const payload: AppWebhookPayload = { userId, messageId, text };
     const body = JSON.stringify(payload);
     try {
