@@ -6,6 +6,8 @@
 import { Module, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PortRegistry } from '@shared/port';
+import { type DrizzleDB } from '@shared';
+import { DATABASE_WRITE_TOKEN } from '@core/constants/tokens';
 import { AccountController, OnboardingController } from './account.controller';
 import { AccountService } from './account.service';
 import { MockCustomerProfileAdapter } from './clients/customer-profile.client';
@@ -27,7 +29,7 @@ import { MockCustomerServiceClient } from './clients/customer-service-mock.clien
     // when the contract goes live; the binding flow's injected interface is unchanged.
     {
       provide: CUSTOMER_SERVICE_CLIENT,
-      useFactory: (configService: ConfigService) => {
+      useFactory: (configService: ConfigService, database: DrizzleDB) => {
         const url = configService.get<string>('CUSTOMER_SERVICE_URL');
         // A real http URL is set, but the binding resolve/verify/profile HTTP client is
         // not implemented yet — keep the mock so the feature stays testable. (resolve for
@@ -38,9 +40,9 @@ import { MockCustomerServiceClient } from './clients/customer-service-mock.clien
             `[binding] CUSTOMER_SERVICE_URL=${url} but binding resolve/verify/profile HTTP client not implemented — using mock. See SPEC-A4-A1 §A4.`,
           );
         }
-        return new MockCustomerServiceClient();
+        return new MockCustomerServiceClient(database);
       },
-      inject: [ConfigService],
+      inject: [ConfigService, DATABASE_WRITE_TOKEN],
     },
   ],
   exports: [AccountService, CUSTOMER_SERVICE_CLIENT],

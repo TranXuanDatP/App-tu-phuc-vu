@@ -19,6 +19,8 @@
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { ConflictException } from '@core/common';
+import { type DrizzleDB } from '@shared';
+import { mockCustomerStoreTable } from '../infrastructure/persistence/drizzle/schema/mock-customer-store.schema';
 import type { CustomerProfileResponse } from '../dto/customer-profile.dto';
 import type {
   CustomerServiceClient,
@@ -138,7 +140,7 @@ const SEED_CUSTOMERS: SeedCustomer[] = [
   },
 ];
 
-// Module-level counter for customers created via the new-customer branch (register→bind).
+// Module-level counter fallback (không có DB — unit tests dựng client không đối số).
 let createdCustomerCounter = 0;
 
 @Injectable()
@@ -146,8 +148,48 @@ export class MockCustomerServiceClient implements CustomerServiceClient {
   private readonly logger = new Logger(MockCustomerServiceClient.name);
   /** normalized phone → seed-shaped record, for customers created via create(). */
   private readonly createdCustomers = new Map<string, SeedCustomer>();
+  /**
+   * Hậu cứ durable (bảng mock_customer_store). Có DB (module wiring) → created
+   * customers sống qua BFF restart: hydrate 1 lần lúc gọi đầu + create() ghi xuống.
+   * Không có DB (tests dựng `new MockCustomerServiceClient()`) → thuần in-memory
+   * như cũ. Trước đây mất RAM sau restart → resolve 'none' cho số ĐÃ đăng ký →
+   * register lại → REF-NEW trùng → binding insert vi phạm unique (bug 2026-08-21).
+   */
+  private readonly db?: DrizzleDB;
+  private hydrated = false;
+
+  constructor(db?: DrizzleDB) {
+    this.db = db;
+  }
+
+  /** Nạp created-customers từ mock_customer_store (1 lần) + phục hồi counter. */
+  private async ensureHydrated(): Promise<void> {
+    if (this.hydrated || !this.db) return;
+    this.hydrated = true;
+    const rows = await this.db.select().from(mockCustomerStoreTable);
+    for (const row of rows) {
+      if (!row.customerRef || !row.phone) continue; // row của profile-mock
+      this.createdCustomers.set(row.phone, {
+        customerRef: row.customerRef,
+        fullName: row.fullName,
+        phone: row.phone,
+        customerId: row.customerId,
+        classification: row.classification as SeedCustomer['classification'],
+        lastInvoiceAmount: row.lastInvoiceAmount ?? '',
+        addressPrefix: row.addressPrefix ?? '',
+        fullAddress: row.address as SeedCustomer['fullAddress'],
+      });
+      const m = /^REF-NEW-(\d{6})$/.exec(row.customerRef);
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (n > createdCustomerCounter) createdCustomerCounter = n;
+      }
+    }
+    if (rows.length) this.logger.log(`hydrated ${this.createdCustomers.size} created customer(s) from mock_customer_store`);
+  }
 
   async resolve(phone: string): Promise<ResolveResult> {
+    await this.ensureHydrated();
     const norm = this.normalizePhone(phone);
     // Created customers first (so resolve sees them after a create in the same process).
     const created = Array.from(this.createdCustomers.values()).filter(
@@ -194,6 +236,7 @@ export class MockCustomerServiceClient implements CustomerServiceClient {
     phone: string,
     profile: CreateCustomerRequest,
   ): Promise<CreateCustomerResult> {
+    await this.ensureHydrated();
     const norm = this.normalizePhone(phone);
     const exists =
       this.createdCustomers.has(norm) ||
@@ -229,6 +272,20 @@ export class MockCustomerServiceClient implements CustomerServiceClient {
       },
     };
     this.createdCustomers.set(norm, record);
+    if (this.db) {
+      await this.db.insert(mockCustomerStoreTable).values({
+        customerId,
+        customerRef,
+        phone: norm,
+        fullName: profile.fullName,
+        classification: profile.classification,
+        address: record.fullAddress as unknown as Record<string, unknown>,
+        contactInfo: null,
+        status: 'active',
+        addressPrefix: record.addressPrefix,
+        lastInvoiceAmount: '',
+      });
+    }
     this.logger.log(`Mock create → ${customerId} (${customerRef}, ${profile.fullName})`);
     return { customerId, customerRef };
   }

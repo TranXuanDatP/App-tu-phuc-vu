@@ -144,4 +144,73 @@ describe('Mock customer-service contract (A4)', () => {
       expect((await client.resolveChannel('ZALO', 'oa-user-1')).status).toBe('none');
     });
   });
+
+  // ── durability (bug 2026-08-21: RAM-only created customers → restart amnesia
+  //    → resolve 'none' cho số ĐÃ đăng ký → register lại → REF-NEW trùng →
+  //    binding insert vi phạm unique) ─────────────────────────────────────────
+  describe('durable created-customers (DB hydration)', () => {
+    /** Fake DrizzleDB: rows in-memory; hydrate gọi .select().from(table) rồi await. */
+    function makeDb(initialRows: Record<string, unknown>[] = []) {
+      const rows = initialRows;
+      return {
+        rows,
+        insert: jest.fn(() => ({ values: jest.fn(async (v: Record<string, unknown>) => { rows.push(v); }) })),
+        select: jest.fn(() => ({ from: async () => rows.slice() })),
+      };
+    }
+
+    it('create() persist row; client MỚI (giả lập BFF restart) + cùng DB vẫn resolve được', async () => {
+      const db = makeDb();
+      const first = new MockCustomerServiceClient(db as any);
+      const created = await first.create('+84123456780', {
+        fullName: 'Trần Mới',
+        classification: 'sinh_hoat',
+        address: { street: '1 A', ward: 'B', district: 'C', city: 'Đà Nẵng' },
+      } as any);
+
+      // "Restart": instance mới, hydrate từ cùng DB.
+      const second = new MockCustomerServiceClient(db as any);
+      const r = await second.resolve('+84123456780');
+      expect(r.status).toBe('one');
+      expect((r as { customerRef?: string }).customerRef).toBe(created.customerRef);
+      expect((r as { maskedHint?: string }).maskedHint).toContain('Trần M***');
+    });
+
+    it('sau "restart", create số trùng → vẫn 409 (atomic phone-uniqueness bền)', async () => {
+      const db = makeDb([
+        {
+          customerId: 'APP-000001', customerRef: 'REF-NEW-000001', phone: '123456780',
+          fullName: 'Trần Mới', classification: 'sinh_hoat',
+          address: { street: '1 A', ward: 'B', district: 'C', city: 'Đà Nẵng' },
+          addressPrefix: '1 A, C', lastInvoiceAmount: '', status: 'active',
+        },
+      ]);
+      const client2 = new MockCustomerServiceClient(db as any);
+      await expect(
+        client2.create('+84123456780', {
+          fullName: 'Ai Đó',
+          classification: 'sinh_hoat',
+          address: { street: 'x', ward: 'y', district: 'z', city: 'Đà Nẵng' },
+        } as any),
+      ).rejects.toThrow('A customer for this phone already exists');
+    });
+
+    it('counter phục hồi từ DB: tạo tiếp sau "restart" không đè REF-NEW cũ', async () => {
+      const db = makeDb([
+        {
+          customerId: 'APP-000001', customerRef: 'REF-NEW-000001', phone: '123456780',
+          fullName: 'Trần Mới', classification: 'sinh_hoat',
+          address: { street: '1 A', ward: 'B', district: 'C', city: 'Đà Nẵng' },
+          addressPrefix: '1 A, C', lastInvoiceAmount: '', status: 'active',
+        },
+      ]);
+      const client2 = new MockCustomerServiceClient(db as any);
+      const r = await client2.create('+84900000001', {
+        fullName: 'Người Thứ Hai',
+        classification: 'sinh_hoat',
+        address: { street: '2 B', ward: 'C', district: 'D', city: 'Đà Nẵng' },
+      } as any);
+      expect(r.customerRef).toBe('REF-NEW-000002');
+    });
+  });
 });

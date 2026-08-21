@@ -22,6 +22,12 @@ export const mockCustomerStoreTable = pgTable(
     address: jsonb('address').$type<Record<string, unknown>>().notNull(),
     contactInfo: jsonb('contact_info').$type<Record<string, unknown> | null>(),
     status: varchar('status', { length: 20 }).notNull(),
+    /** Binding-mock (REF-NEW-NNNNNN) — NULL cho row do profile-mock tạo. */
+    customerRef: varchar('customer_ref', { length: 24 }),
+    /** Hint basis cho resolve (street + district) — binding-mock. */
+    addressPrefix: text('address_prefix'),
+    /** Bill-secret — rỗng cho khách mới tạo (creation = proof). */
+    lastInvoiceAmount: varchar('last_invoice_amount', { length: 32 }).default(''),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('mock_customer_phone_idx').on(t.phone)],
