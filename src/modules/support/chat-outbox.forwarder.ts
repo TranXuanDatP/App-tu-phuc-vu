@@ -16,6 +16,8 @@
  * clearInterval khi module destroy.
  */
 import { Injectable, Inject, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import * as net from 'net';
 import { asc, eq, isNull } from 'drizzle-orm';
 import { type DrizzleDB } from '@shared';
 import { DATABASE_WRITE_TOKEN } from '@core/constants/tokens';
@@ -24,16 +26,39 @@ import { chatOutboxTable } from './infrastructure/persistence/drizzle/schema/cha
 
 const FLUSH_INTERVAL_MS = 10_000;
 const FLUSH_BATCH = 50;
+/** Cache kết quả TCP probe (ms) — probe mỗi lượt flush thì phí. */
+const PROBE_CACHE_MS = 30_000;
+/** Timeout probe (ms) — refused fail gần như tức thời, timeout chỉ cho host chết chậm. */
+const PROBE_TIMEOUT_MS = 1_000;
 
 @Injectable()
 export class ChatOutboxForwarder implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger('chat-outbox-forwarder');
   private timer?: ReturnType<typeof setInterval>;
+  /** Host/port của CSKH_WEBHOOK_URL cho probe; undefined = mock mode (không probe). */
+  private readonly wireHost?: string;
+  private readonly wirePort?: number;
+  private probeOk = true;
+  private probeAt = 0;
+  /** Chỉ log khi trạng thái ĐỔI (down lần đầu / hồi phục) — không spam mỗi 10s. */
+  private announcedDown = false;
 
   constructor(
     private readonly portRegistry: PortRegistry,
     @Inject(DATABASE_WRITE_TOKEN) private readonly db: DrizzleDB,
-  ) {}
+    config: ConfigService,
+  ) {
+    const url = config.get<string>('CSKH_WEBHOOK_URL');
+    if (url) {
+      try {
+        const u = new URL(url);
+        this.wireHost = u.hostname;
+        this.wirePort = Number(u.port || 80);
+      } catch {
+        // URL hỏng — để port call tự báo lỗi cấu hình.
+      }
+    }
+  }
 
   onModuleInit(): void {
     this.timer = setInterval(() => {
@@ -51,7 +76,42 @@ export class ChatOutboxForwarder implements OnModuleInit, OnModuleDestroy {
    * Được gọi: (1) ngay sau mỗi sendMessage (best-effort, không chặn response),
    * (2) bởi ticker nền mỗi 10s.
    */
+  /**
+   * TCP probe tới receiver (cache PROBE_CACHE_MS). Receiver chết → bỏ qua lượt
+   * flush HOÀN TOÀN: không gọi port ⇒ registry không log "Fallback failed" mỗi
+   * 10s (Pc: không chạy omnichannel thì phải im). Hồi phục trong ≤30s là flush
+   * chạy lại bình thường.
+   */
+  private async wireReachable(): Promise<boolean> {
+    if (!this.wireHost || !this.wirePort) return true; // mock mode — adapter tự xử lý
+    const now = Date.now();
+    if (now - this.probeAt < PROBE_CACHE_MS) return this.probeOk;
+    this.probeAt = now;
+    this.probeOk = await new Promise<boolean>((resolve) => {
+      const socket = net.connect({ host: this.wireHost!, port: this.wirePort! });
+      const done = (ok: boolean) => {
+        socket.destroy();
+        resolve(ok);
+      };
+      socket.setTimeout(PROBE_TIMEOUT_MS, () => done(false));
+      socket.once('connect', () => done(true));
+      socket.once('error', () => done(false));
+    });
+    if (!this.probeOk && !this.announcedDown) {
+      this.announcedDown = true;
+      this.logger.warn(
+        `omnichannel (${this.wireHost}:${this.wirePort}) không reachable — outbox giữ tin chờ, sẽ im lặng thử lại (không spam) tới khi receiver lên`,
+      );
+    }
+    if (this.probeOk && this.announcedDown) {
+      this.announcedDown = false;
+      this.logger.log('omnichannel reachable lại — tiếp tục flush outbox');
+    }
+    return this.probeOk;
+  }
+
   async flushOnce(): Promise<number> {
+    if (!(await this.wireReachable())) return 0;
     const pending = await this.db
       .select({
         messageId: chatOutboxTable.messageId,
