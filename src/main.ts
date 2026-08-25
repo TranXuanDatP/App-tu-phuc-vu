@@ -5,6 +5,19 @@ if (process.env.NODE_ENV !== 'production' && !process.env.SKIP_TSCONFIG_PATHS) {
     // Ignore error if not found or failing in non-dev env
   }
 }
+// Build stamp — log MỖI lần boot: git short hash + '-dirty' nếu working tree
+// có thay đổi chưa commit (điều kiện cần cho verify: biết chắc SERVER đang chạy
+// code nào — stamp mobile chỉ chứng minh được phía client).
+try {
+  const { execSync } = require('child_process') as typeof import('child_process');
+  const hash = execSync('git rev-parse --short HEAD').toString().trim();
+  const dirty = execSync('git status --porcelain').toString().trim() ? '-dirty' : '';
+  // eslint-disable-next-line no-console
+  console.log(`[build] app-tu-phuc-vu BFF running code: ${hash}${dirty}`);
+} catch {
+  // eslint-disable-next-line no-console
+  console.log('[build] app-tu-phuc-vu BFF running code: unknown (no git)');
+}
 import { NestFactory } from '@nestjs/core';
 import {
   FastifyAdapter,
